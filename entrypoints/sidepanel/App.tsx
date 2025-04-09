@@ -38,6 +38,26 @@ function App() {
       setError('加载关键词失败');
     });
   }, []);
+  
+  // 获取页面语言代码
+  const getPageLanguage = async (): Promise<string> => {
+    try {
+      const response = await browser.runtime.sendMessage({ action: 'getPageLanguage' });
+      if (response && response.success && response.lang) {
+        console.log('Page language detected:', response.lang);
+        setPageLanguage(response.lang);
+        return response.lang;
+      } else {
+        console.warn('Failed to get page language or language not detected, using default:', response);
+        setPageLanguage('en'); // 默认使用英语
+        return 'en';
+      }
+    } catch (err) {
+      console.error('Error getting page language:', err);
+      setPageLanguage('en'); // 出错时默认使用英语
+      return 'en';
+    }
+  };
 
   // 提取页面内容
   const extractPageContent = async () => {
@@ -133,15 +153,11 @@ function App() {
       }
       
       setPageContent(extractResponse.data!);
-      
-      // 获取页面语言
-      const langResponse = await browser.runtime.sendMessage({ action: 'getPageLanguage' });
-      if (langResponse && langResponse.success && langResponse.lang) {
-        setPageLanguage(langResponse.lang);
-      }
+
+      const pageLanguage = await getPageLanguage();
       
       // 继续生成评论流程
-      await generateCommentWithContent(extractResponse.data!);
+      await generateCommentWithContent(extractResponse.data!, pageLanguage);
     } catch (err) {
       setError(err instanceof Error ? err.message : '提取内容或生成评论失败');
       setIsLoading(false);
@@ -150,7 +166,7 @@ function App() {
   };
   
   // 使用提取的内容生成评论
-  const generateCommentWithContent = async (content: ExtractedContent) => {
+  const generateCommentWithContent = async (content: ExtractedContent, langcode: string) => {
     if (!content) {
       setError('页面内容为空');
       return;
@@ -189,12 +205,11 @@ function App() {
       // 根据页面语言决定是否生成双语评论
       const comments: string[] = [];
       
-      console.log('pageLanguage', pageLanguage);
-      if (pageLanguage && pageLanguage !== 'en' && pageLanguage !== '') {
+      if (langcode && langcode !== 'en' && langcode !== '') {
         const args = {
           content: contentToSend,
           keywords: keywordsList,
-          langcode: pageLanguage
+          langcode: langcode
         };
         // 生成英文评论
         const [englishComment, localComment] = await Promise.all([
