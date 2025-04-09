@@ -136,7 +136,7 @@ function App() {
           
           {/* 生成评论按钮 */}
           <button 
-            className={`btn btn-accent w-full mt-4 ${isGeneratingComment ? 'loading' : ''}`} 
+            className={`btn btn-secondary w-full mt-4 ${isGeneratingComment ? 'loading' : ''}`} 
             onClick={generateComment}
             disabled={isGeneratingComment || !llmSettings || !llmSettings.provider}
           >
@@ -163,13 +163,13 @@ function App() {
       {/* 生成的评论 */}
       {generatedComment && (
         <div className="mt-4">
-          <div className="card bg-base-200">
-            <div className="card-body">
+          <div className="card bg-base-200 text-start">
+            <div className="card-body p-0">
               <h3 className="card-title text-lg">生成的评论</h3>
               <p>{generatedComment}</p>
               <div className="card-actions justify-end mt-2">
-                <button className="btn btn-sm btn-outline" onClick={copyToClipboard}>
-                  复制到剪贴板
+                <button className="btn btn-sm btn-primary" onClick={copyToClipboard}>
+                  复制
                 </button>
               </div>
             </div>

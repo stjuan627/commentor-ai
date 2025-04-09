@@ -6,6 +6,32 @@ export interface LLMService {
   generateComment(content: string, promptTemplate?: string): Promise<string>;
 }
 
+export interface PromptArgs {
+  content: string;
+  keywords?: string[];
+  langcode?: string;
+}
+
+export function generatePrompt(args: PromptArgs, promptTemplate?: string): string {
+  const lang = args.langcode || 'en';
+  const keywords = args.keywords ? args.keywords.join(', ') : '';
+  const defaultTemplate = `
+Your task is to read the article/forum discussion and then help me write a comment with the following requirements:
+- The comment should be natural to avoid spamming.
+- The comment should incorporate these keywords: {keywords}.
+- The language should be {lang}.
+- Output should be plain text without any explanation.
+
+The article/forum discussion is as follows:
+{content}
+`;
+  const template = promptTemplate || defaultTemplate;
+  return template
+    .replace('{content}', args.content)
+    .replace('{keywords}', keywords)
+    .replace('{lang}', lang);
+}
+
 export function createLLMService(settings: LLMSettings): LLMService | null {
   if (!settings.provider) {
     return null;

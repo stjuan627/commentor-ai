@@ -1,4 +1,4 @@
-import { LLMService } from './index';
+import { generatePrompt, LLMService } from './index';
 
 export class OpenAIService implements LLMService {
   private apiKey: string;
@@ -16,7 +16,7 @@ export class OpenAIService implements LLMService {
   }
 
   async generateComment(content: string, promptTemplate?: string): Promise<string> {
-    const prompt = this.formatPrompt(content, promptTemplate);
+    const prompt = generatePrompt({ content }, promptTemplate);
     
     try {
       const response = await fetch(`${this.apiHost}/chat/completions`, {
@@ -28,7 +28,6 @@ export class OpenAIService implements LLMService {
         body: JSON.stringify({
           model: this.model,
           messages: [
-            { role: 'system', content: '你是一个专业的内容评论助手，擅长对文章进行简短而有见地的评论。' },
             { role: 'user', content: prompt }
           ],
           temperature: 0.7,
@@ -47,11 +46,5 @@ export class OpenAIService implements LLMService {
       console.error('Error calling OpenAI API:', error);
       throw error;
     }
-  }
-
-  private formatPrompt(content: string, template?: string): string {
-    const defaultTemplate = '请对以下内容进行评论：\n\n{content}';
-    const promptTemplate = template || defaultTemplate;
-    return promptTemplate.replace('{content}', content);
   }
 }

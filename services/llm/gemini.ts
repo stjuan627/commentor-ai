@@ -1,4 +1,5 @@
-import { LLMService } from './index';
+import { generatePrompt } from './index';
+import type { LLMService } from './index';
 
 export class GeminiService implements LLMService {
   private apiKey: string;
@@ -10,12 +11,12 @@ export class GeminiService implements LLMService {
     model?: string
   ) {
     this.apiKey = apiKey;
-    this.model = model || 'gemini-pro';
+    this.model = model || 'gemini-2.0-flash';
     this.apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
   }
 
   async generateComment(content: string, promptTemplate?: string): Promise<string> {
-    const prompt = this.formatPrompt(content, promptTemplate);
+    const prompt = generatePrompt({ content }, promptTemplate);
     
     try {
       const url = `${this.apiEndpoint}?key=${this.apiKey}`;
@@ -56,11 +57,5 @@ export class GeminiService implements LLMService {
       console.error('Error calling Gemini API:', error);
       throw error;
     }
-  }
-
-  private formatPrompt(content: string, template?: string): string {
-    const defaultTemplate = '请对以下内容进行评论：\n\n{content}';
-    const promptTemplate = template || defaultTemplate;
-    return promptTemplate.replace('{content}', content);
   }
 }
