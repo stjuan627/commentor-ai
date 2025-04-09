@@ -485,9 +485,10 @@ function App() {
         <div className="mt-4">
           <h2 className="text-lg font-semibold mb-2">生成的评论</h2>
           {generatedComments.map((comment, index) => (
-            <div key={index} className="card bg-base-200 mb-2 p-0">
-              <div className="flex justify-between items-center mb-2">
+            <div key={index} className="card bg-base-200 mb-2 p-4">
+              <div className="flex justify-between items-center mb-2 border-b border-base-300 pb-3">
                 <div className="flex gap-2 items-center flex-wrap">
+                  <span className='uppercase font-bold'>Copy As</span>
                   <CopyButton onClick={() => copyToClipboard(comment)} className="btn btn-xs btn-outline btn-neutral">
                     TXT
                   </CopyButton>
