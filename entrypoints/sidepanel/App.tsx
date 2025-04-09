@@ -301,7 +301,7 @@ function App() {
       // 使用正则表达式匹配整个单词
       const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
       
-      result = result.replace(regex, `<span class="text-accent">${keyword}</span>`);
+      result = result.replace(regex, `<span class="text-error font-bold">${keyword}</span>`);
     }
     
     return result;
@@ -309,7 +309,7 @@ function App() {
 
   return (
     <div className="w-full h-full bg-base-100 p-0">
-      <h1 className="text-2xl font-bold text-center mb-8">Commentor.ai</h1>
+      <h1 className="text-3xl uppercase tracking-tight font-bold text-center mb-8">Commentor.AI</h1>
       
       {/* 错误提示 */}
       {error && (
@@ -369,7 +369,7 @@ function App() {
                   <tr key={index}>
                     <td>{item.keyword}</td>
                     <td className="truncate max-w-[150px]">
-                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="link link-primary">
+                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="link">
                         {item.url}
                       </a>
                     </td>
@@ -399,7 +399,7 @@ function App() {
       
       {/* 生成评论按钮 */}
       <button 
-        className={`btn btn-secondary w-full mb-4`} 
+        className={`btn btn-warning w-full mb-4`} 
         onClick={generateComment}
         disabled={isGeneratingComment || isLoading || !llmSettings || !llmSettings.provider}
       >
@@ -446,13 +446,13 @@ function App() {
             <div key={index} className="card bg-base-200 mb-2 p-0">
               <div className="flex justify-between items-center mb-2">
                 <div className="flex gap-2 items-center flex-wrap">
-                  <CopyButton onClick={() => copyToClipboard(comment)} className="btn btn-sm btn-outline">
+                  <CopyButton onClick={() => copyToClipboard(comment)} className="btn btn-sm btn-outline btn-neutral">
                     复制纯文本
                   </CopyButton>
-                  <CopyButton onClick={() => copyAsHtmlLinks(comment)} className="btn btn-sm btn-outline btn-primary">
+                  <CopyButton onClick={() => copyAsHtmlLinks(comment)} className="btn btn-sm btn-primary">
                     HTML链接
                   </CopyButton>
-                  <CopyButton onClick={() => copyAsMarkdownLinks(comment)} className="btn btn-sm btn-outline btn-secondary">
+                  <CopyButton onClick={() => copyAsMarkdownLinks(comment)} className="btn btn-sm btn-success">
                     Markdown
                   </CopyButton>
                 </div>
