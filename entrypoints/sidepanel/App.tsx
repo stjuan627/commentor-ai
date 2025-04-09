@@ -12,7 +12,7 @@ function App() {
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
   const [isGeneratingComment, setIsGeneratingComment] = useState(false);
   const [keywords, setKeywords] = useState<KeywordItem[]>([]);
-  const [newKeyword, setNewKeyword] = useState<KeywordItem>({ keyword: '', url: '' });
+  const [newKeyword, setNewKeyword] = useState<KeywordItem>({ keyword: '', url: '', enabled: true });
   const [editingKeywordIndex, setEditingKeywordIndex] = useState<number | null>(null);
   const [pageLanguage, setPageLanguage] = useState<string>('en');
 
@@ -88,9 +88,9 @@ function App() {
       return;
     }
     
-    const updatedKeywords = [...keywords, newKeyword];
+    const updatedKeywords = [...keywords, { ...newKeyword, enabled: true }];
     setKeywords(updatedKeywords);
-    setNewKeyword({ keyword: '', url: '' });
+    setNewKeyword({ keyword: '', url: '', enabled: true });
     
     // 保存到存储
     browser.storage.local.set({ keywords: updatedKeywords })
@@ -108,9 +108,9 @@ function App() {
     }
     
     const updatedKeywords = [...keywords];
-    updatedKeywords[editingKeywordIndex] = newKeyword;
+    updatedKeywords[editingKeywordIndex] = { ...newKeyword, enabled: updatedKeywords[editingKeywordIndex].enabled };
     setKeywords(updatedKeywords);
-    setNewKeyword({ keyword: '', url: '' });
+    setNewKeyword({ keyword: '', url: '', enabled: true });
     setEditingKeywordIndex(null);
     
     // 保存到存储
@@ -122,12 +122,28 @@ function App() {
   };
   
   const editKeyword = (index: number) => {
-    setNewKeyword(keywords[index]);
+    setNewKeyword({ ...keywords[index] });
     setEditingKeywordIndex(index);
   };
   
   const deleteKeyword = (index: number) => {
     const updatedKeywords = keywords.filter((_, i) => i !== index);
+    setKeywords(updatedKeywords);
+    
+    // 保存到存储
+    browser.storage.local.set({ keywords: updatedKeywords })
+      .catch(err => {
+        console.error('Error saving keywords:', err);
+        setError('保存关键词失败');
+      });
+  };
+  
+  const toggleKeyword = (index: number) => {
+    const updatedKeywords = [...keywords];
+    updatedKeywords[index] = {
+      ...updatedKeywords[index],
+      enabled: !updatedKeywords[index].enabled
+    };
     setKeywords(updatedKeywords);
     
     // 保存到存储
@@ -199,8 +215,8 @@ function App() {
       // 准备内容
       const contentToSend = `# ${content.title}\n\n${content.content}`;
       
-      // 提取关键词列表
-      const keywordsList = keywords.map(k => k.keyword);
+      // 提取启用的关键词列表
+      const keywordsList = keywords.filter(k => k.enabled).map(k => k.keyword);
       
       // 根据页面语言决定是否生成双语评论
       const comments: string[] = [];
@@ -239,11 +255,13 @@ function App() {
   };
 
   // 添加关键词链接的辅助函数
-  const addLinksToComment = (comment: string, format: 'html' | 'markdown') => {
+  const addLinksToComment = (comment: string, format: 'html' | 'markdown' | 'bbcode') => {
     let result = comment;
     
     // 按关键词长度排序，优先替换较长的关键词，避免部分替换问题
-    const sortedKeywords = [...keywords].sort((a, b) => b.keyword.length - a.keyword.length);
+    const sortedKeywords = [...keywords]
+      .filter(k => k.enabled)
+      .sort((a, b) => b.keyword.length - a.keyword.length);
     
     for (const keywordItem of sortedKeywords) {
       const { keyword, url } = keywordItem;
@@ -252,8 +270,10 @@ function App() {
       
       if (format === 'html') {
         result = result.replace(regex, `<a href="${url}">${keyword}</a>`);
-      } else { // markdown
+      } else if (format === 'markdown') {
         result = result.replace(regex, `[${keyword}](${url})`);
+      } else if (format === 'bbcode') {
+        result = result.replace(regex, `[url=${url}]${keyword}[/url]`);
       }
     }
     
@@ -289,12 +309,24 @@ function App() {
     }
   };
 
+  // 复制带链接的评论到剪贴板
+  const copyWithLinks = (comment: string, format: 'html' | 'markdown' | 'bbcode') => {
+    if (comment) {
+      const commentWithLinks = addLinksToComment(comment, format);
+      navigator.clipboard.writeText(commentWithLinks).catch(err => {
+        setError('复制到剪贴板失败: ' + err.message);
+      });
+    }
+  };
+
   // 高亮关键词
   const highlightKeywords = (text: string) => {
     let result = text;
     
     // 按关键词长度排序，优先替换较长的关键词，避免部分替换问题
-    const sortedKeywords = [...keywords].sort((a, b) => b.keyword.length - a.keyword.length);
+    const sortedKeywords = [...keywords]
+      .filter(k => k.enabled)
+      .sort((a, b) => b.keyword.length - a.keyword.length);
     
     for (const keywordItem of sortedKeywords) {
       const { keyword } = keywordItem;
@@ -308,7 +340,7 @@ function App() {
   };
 
   return (
-    <div className="w-full h-full bg-base-100 p-0">
+    <div className="w-full h-full bg-base-100 p-4">
       <h1 className="text-3xl uppercase tracking-tight font-bold text-center mb-8">Commentor.AI</h1>
       
       {/* 错误提示 */}
@@ -339,14 +371,14 @@ function App() {
           />
           {editingKeywordIndex !== null ? (
             <button 
-              className="btn btn-sm btn-primary" 
+              className="btn btn-sm btn-warning" 
               onClick={updateKeyword}
             >
               更新
             </button>
           ) : (
             <button 
-              className="btn btn-sm btn-primary" 
+              className="btn btn-sm btn-warning" 
               onClick={addKeyword}
             >
               添加
@@ -359,32 +391,42 @@ function App() {
             <table className="table table-xs">
               <thead>
                 <tr>
-                  <th>关键词</th>
-                  <th>URL</th>
+                  <th>关键词/URL</th>
+                  <th>启用</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {keywords.map((item, index) => (
                   <tr key={index}>
-                    <td>{item.keyword}</td>
-                    <td className="truncate max-w-[150px]">
-                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="link">
-                        {item.url}
-                      </a>
+                    <td valign='top'>
+                      <span className='text-sm'>{item.keyword}</span>
+                      <div className="truncate max-w-[150px]">
+                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="link text-gray-400 tracking-tight">
+                          {item.url}
+                        </a>
+                      </div>
                     </td>
-                    <td className="flex gap-1">
+                    <td valign='top'>
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-sm"
+                        checked={item.enabled}
+                        onChange={() => toggleKeyword(index)}
+                      />
+                    </td>
+                    <td valign='top' className="flex gap-1">
                       <button 
-                        className="btn btn-xs btn-outline"
+                        className="btn btn-xs btn-circle btn-ghost"
                         onClick={() => editKeyword(index)}
                       >
-                        编辑
+                        <svg xmlns="http://www.w3.org/2000/svg" className='size-4' viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h4L18.5 9.5a2.828 2.828 0 1 0-4-4L4 16zm9.5-13.5l4 4"/></svg>
                       </button>
                       <button 
-                        className="btn btn-xs btn-outline btn-error"
+                        className="btn btn-xs btn-circle btn-ghost"
                         onClick={() => deleteKeyword(index)}
                       >
-                        删除
+                        <svg xmlns="http://www.w3.org/2000/svg" className='size-4' viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16m-10 4v6m4-6v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>
                       </button>
                     </td>
                   </tr>
@@ -446,14 +488,17 @@ function App() {
             <div key={index} className="card bg-base-200 mb-2 p-0">
               <div className="flex justify-between items-center mb-2">
                 <div className="flex gap-2 items-center flex-wrap">
-                  <CopyButton onClick={() => copyToClipboard(comment)} className="btn btn-sm btn-outline btn-neutral">
-                    复制纯文本
+                  <CopyButton onClick={() => copyToClipboard(comment)} className="btn btn-xs btn-outline btn-neutral">
+                    TXT
                   </CopyButton>
-                  <CopyButton onClick={() => copyAsHtmlLinks(comment)} className="btn btn-sm btn-primary">
-                    HTML链接
+                  <CopyButton onClick={() => copyWithLinks(comment, 'html')} className="btn btn-xs btn-info">
+                    HTML
                   </CopyButton>
-                  <CopyButton onClick={() => copyAsMarkdownLinks(comment)} className="btn btn-sm btn-success">
-                    Markdown
+                  <CopyButton onClick={() => copyWithLinks(comment, 'markdown')} className="btn btn-xs btn-success">
+                    MD
+                  </CopyButton>
+                  <CopyButton onClick={() => copyWithLinks(comment, 'bbcode')} className="btn btn-xs btn-primary">
+                    BBCode
                   </CopyButton>
                 </div>
               </div>

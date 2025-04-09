@@ -4,6 +4,8 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
+    name: "Commentor AI",
+    description: "Extracts webpage content and generates comments with AI.",
     permissions: [
       "storage", // Needed for saving settings
       "activeTab", // Needed by content script communication

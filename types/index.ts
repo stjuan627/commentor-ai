@@ -15,6 +15,7 @@ export interface LLMSettings {
 export interface KeywordItem {
   keyword: string;
   url: string;
+  enabled: boolean;
 }
 
 export interface ExtractedContent {
