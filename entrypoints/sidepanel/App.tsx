@@ -1,33 +1,26 @@
 import { useState, useEffect } from 'react';
 import './App.css';
-
-interface ExtractedContent {
-  title: string;
-  content: string;
-  excerpt: string;
-  byline: string;
-  siteName: string;
-  url: string;
-}
-
-interface ExtractResponse {
-  success: boolean;
-  data?: ExtractedContent;
-  error?: string;
-}
+import { createLLMService } from '../../services/llm';
+import { LLMSettings, ExtractedContent, ExtractResponse } from '../../types';
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pageContent, setPageContent] = useState<ExtractedContent | null>(null);
   const [generatedComment, setGeneratedComment] = useState<string>('');
-  const [apiKey, setApiKey] = useState<string>('');
+  const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
   const [isGeneratingComment, setIsGeneratingComment] = useState(false);
 
-  // 从存储中加载 API key
+  // 从存储中加载 LLM 设置
   useEffect(() => {
-    // 这里应该从浏览器存储中加载 API key
-    // 暂时留空，后续实现
+    browser.storage.local.get('llmSettings').then((result: {llmSettings?: LLMSettings}) => {
+      if (result.llmSettings) {
+        setLlmSettings(result.llmSettings);
+      }
+    }).catch(err => {
+      console.error('Error loading LLM settings:', err);
+      setError('加载 LLM 设置失败');
+    });
   }, []);
 
   // 提取页面内容
@@ -59,8 +52,17 @@ function App() {
       return;
     }
     
-    if (!apiKey) {
-      setError('请先设置 API Key');
+    if (!llmSettings || !llmSettings.provider) {
+      setError('请先在选项页面设置 LLM 提供商');
+      return;
+    }
+    
+    // 检查是否有 API Key
+    if (
+      (llmSettings.provider === 'openai' && !llmSettings.openai?.apiKey) ||
+      (llmSettings.provider === 'gemini' && !llmSettings.gemini?.apiKey)
+    ) {
+      setError('请先在选项页面设置 API Key');
       return;
     }
     
@@ -68,14 +70,22 @@ function App() {
     setError(null);
     
     try {
-      // 这里应该调用 LLM API 生成评论
-      // 暂时模拟一个生成的评论
-      setTimeout(() => {
-        setGeneratedComment(`这是一个关于"${pageContent.title}"的模拟评论。实际开发中，这里应该调用 LLM API 生成真实的评论。`);
-        setIsGeneratingComment(false);
-      }, 1500);
+      // 创建 LLM 服务
+      const llmService = createLLMService(llmSettings);
+      if (!llmService) {
+        throw new Error('无法创建 LLM 服务');
+      }
+      
+      // 准备内容
+      const contentToSend = `标题：${pageContent.title}\n\n内容：${pageContent.content}`;
+      
+      // 调用 LLM 服务生成评论
+      const comment = await llmService.generateComment(contentToSend, llmSettings.promptTemplate);
+      setGeneratedComment(comment);
     } catch (err) {
+      console.error('Error generating comment:', err);
       setError(err instanceof Error ? err.message : '生成评论时发生错误');
+    } finally {
       setIsGeneratingComment(false);
     }
   };
@@ -94,22 +104,8 @@ function App() {
   };
 
   return (
-    <div className="p-4 max-w-md mx-auto bg-base-100 rounded-lg shadow-lg">
+    <div className="p-0 w-full h-full bg-base-100">
       <h1 className="text-2xl font-bold text-center mb-4">Commentor.ai</h1>
-      
-      {/* API Key 输入 */}
-      <div className="mb-4">
-        <label className="label">
-          <span className="label-text">API Key</span>
-        </label>
-        <input 
-          type="password" 
-          className="input input-bordered w-full" 
-          value={apiKey} 
-          onChange={(e) => setApiKey(e.target.value)} 
-          placeholder="输入你的 API Key"
-        />
-      </div>
       
       {/* 提取内容按钮 */}
       <button 
@@ -129,12 +125,12 @@ function App() {
       
       {/* 提取的内容 */}
       {pageContent && (
-        <div className="mb-4">
+        <div className="w-full mb-4">
           <div className="card bg-base-200">
             <div className="card-body">
-              <h2 className="card-title">{pageContent.title}</h2>
-              <p className="text-sm opacity-70 mb-2">{pageContent.url}</p>
+              <div className="card-title">{pageContent.title}</div>
               <p className="line-clamp-3">{pageContent.excerpt || pageContent.content.substring(0, 150) + '...'}</p>
+              {/* <p className="text-sm opacity-70">{pageContent.content}</p> */}
             </div>
           </div>
           
@@ -142,10 +138,25 @@ function App() {
           <button 
             className={`btn btn-accent w-full mt-4 ${isGeneratingComment ? 'loading' : ''}`} 
             onClick={generateComment}
-            disabled={isGeneratingComment}
+            disabled={isGeneratingComment || !llmSettings || !llmSettings.provider}
           >
             {isGeneratingComment ? '正在生成...' : '生成评论'}
           </button>
+          {!llmSettings?.provider && (
+            <div className="text-sm text-warning mt-2">
+              请先在<a href="#" onClick={(e) => {
+                e.preventDefault();
+                browser.runtime.sendMessage({ action: 'openOptionsPage' })
+                  .then(response => {
+                    if (response && response.action === 'openOptionsInSidepanel') {
+                      // 直接在新标签页中打开选项页面
+                      window.open('/options.html', '_blank');
+                    }
+                  })
+                  .catch(err => console.error('Error opening options page:', err));
+              }} className="text-info underline">选项页面</a>设置 LLM 提供商
+            </div>
+          )}
         </div>
       )}
       

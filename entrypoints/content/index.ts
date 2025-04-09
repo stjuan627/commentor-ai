@@ -43,10 +43,23 @@ export default defineContentScript({
 
     // 监听来自扩展其他部分的消息
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      console.log('Content script received message:', message);
+      
+      // 响应ping消息，用于检测内容脚本是否已加载
+      if (message.action === 'ping') {
+        console.log('Responding to ping');
+        sendResponse({ success: true, message: 'Content script is loaded' });
+        return true;
+      }
+      
+      // 提取内容
       if (message.action === 'extractContent') {
+        console.log('Extracting content...');
         const result = extractContent();
+        console.log('Extraction result:', result);
         sendResponse(result);
       }
+      
       return true; // 保持消息通道开放，以便异步响应
     });
   },

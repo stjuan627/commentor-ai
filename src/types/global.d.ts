@@ -26,4 +26,18 @@ declare const browser: {
     }>>;
     sendMessage: (tabId: number, message: any) => Promise<any>;
   };
+  storage: {
+    local: {
+      get: <T = any>(keys?: string | string[] | null) => Promise<T>;
+      set: (items: Record<string, any>) => Promise<void>;
+      remove: (keys: string | string[]) => Promise<void>;
+      clear: () => Promise<void>;
+    };
+    sync?: {
+      get: <T = any>(keys?: string | string[] | null) => Promise<T>;
+      set: (items: Record<string, any>) => Promise<void>;
+      remove: (keys: string | string[]) => Promise<void>;
+      clear: () => Promise<void>;
+    };
+  };
 };
