@@ -33,6 +33,54 @@ export default defineBackground(() => {
       return true;
     }
     
+    if (message.action === 'getPageLanguage') {
+      // 使用立即执行函数处理异步操作
+      (async () => {
+        try {
+          // 获取当前活动标签页
+          const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+          if (!tabs || tabs.length === 0) {
+            sendResponse({ success: false, error: 'No active tab found' });
+            return;
+          }
+
+          const activeTab = tabs[0];
+          if (!activeTab.id) {
+            sendResponse({ success: false, error: 'Tab ID is undefined' });
+            return;
+          }
+          
+          // 确保内容脚本已注入
+          const isInjected = await ensureContentScriptInjected(activeTab.id);
+          if (!isInjected) {
+            sendResponse({ success: false, error: 'Failed to inject content script' });
+            return;
+          }
+          
+          // 向 content script 发送消息，请求获取页面语言
+          try {
+            const response = await browser.tabs.sendMessage(activeTab.id, { action: 'getPageLanguage' });
+            // 将语言代码返回给发送者
+            sendResponse(response);
+          } catch (error: unknown) {
+            console.error('Error communicating with content script:', error);
+            sendResponse({ 
+              success: false, 
+              error: 'Failed to communicate with content script: ' + (error instanceof Error ? error.message : 'Unknown error')
+            });
+          }
+        } catch (error: unknown) {
+          console.error('Error in background script:', error);
+          sendResponse({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          });
+        }
+      })();
+      
+      return true; // 保持消息通道开放
+    }
+    
     if (message.action === 'getPageContent') {
       // 使用立即执行函数处理异步操作
       (async () => {

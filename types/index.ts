@@ -12,6 +12,11 @@ export interface LLMSettings {
   };
 }
 
+export interface KeywordItem {
+  keyword: string;
+  url: string;
+}
+
 export interface ExtractedContent {
   title: string;
   content: string;

@@ -3,7 +3,7 @@ import { GeminiService } from './gemini';
 import { LLMSettings } from '../../types';
 
 export interface LLMService {
-  generateComment(content: string, promptTemplate?: string): Promise<string>;
+  generateComment(content: string, promptTemplate?: string, promptArgs?: PromptArgs): Promise<string>;
 }
 
 export interface PromptArgs {

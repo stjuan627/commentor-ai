@@ -1,4 +1,4 @@
-import { generatePrompt, LLMService } from './index';
+import { generatePrompt, LLMService, PromptArgs } from './index';
 
 export class OpenAIService implements LLMService {
   private apiKey: string;
@@ -15,8 +15,8 @@ export class OpenAIService implements LLMService {
     this.model = model || 'gpt-4o';
   }
 
-  async generateComment(content: string, promptTemplate?: string): Promise<string> {
-    const prompt = generatePrompt({ content }, promptTemplate);
+  async generateComment(content: string, promptTemplate?: string, promptArgs?: PromptArgs): Promise<string> {
+    const prompt = generatePrompt(promptArgs || { content }, promptTemplate);
     
     try {
       const response = await fetch(`${this.apiHost}/chat/completions`, {

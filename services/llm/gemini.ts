@@ -1,4 +1,4 @@
-import { generatePrompt } from './index';
+import { generatePrompt, PromptArgs } from './index';
 import type { LLMService } from './index';
 
 export class GeminiService implements LLMService {
@@ -15,8 +15,8 @@ export class GeminiService implements LLMService {
     this.apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
   }
 
-  async generateComment(content: string, promptTemplate?: string): Promise<string> {
-    const prompt = generatePrompt({ content }, promptTemplate);
+  async generateComment(content: string, promptTemplate?: string, promptArgs?: PromptArgs): Promise<string> {
+    const prompt = generatePrompt(promptArgs || { content }, promptTemplate);
     
     try {
       const url = `${this.apiEndpoint}?key=${this.apiKey}`;
