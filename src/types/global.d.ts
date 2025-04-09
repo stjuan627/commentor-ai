@@ -1,11 +1,4 @@
-// 为 wxt/sandbox 模块提供类型声明
-declare module 'wxt/sandbox' {
-  export function defineBackground(callback: () => void): any;
-  export function defineContentScript(options: {
-    matches?: string[];
-    main: () => void;
-  }): any;
-}
+// 不再需要为 wxt/utils 模块提供类型声明，因为我们直接从 wxt/utils 导入
 
 // 声明全局 browser 对象
 declare const browser: {

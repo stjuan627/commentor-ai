@@ -21,13 +21,13 @@ The extraction should prioritize the core article/post content, filtering out bo
 
 ## 3. TODO List
 
--   [ ] **Integrate Readability.js:** Add `Readability.js` library to the project (e.g., as a bundled asset or via npm if using a bundler with `wxt`).
--   [ ] **Develop Content Script:** Create a `content/extractor.js` (or similar) script.
--   [ ] **Implement Extraction Logic:**
-    -   [ ] Write code in the content script to clone `document.body`.
-    -   [ ] Instantiate `Readability` with the cloned body and `window.location.href`.
-    -   [ ] Call `readability.parse()`.
-    -   [ ] Handle potential errors during parsing.
--   [ ] **Communication:** Set up messaging (using `browser.runtime.sendMessage` or `wxt/messaging`) for other parts of the extension (like the popup or background script) to request the extracted content from the content script.
+-   [x] **Integrate Readability.js:** Add `Readability.js` library to the project (e.g., as a bundled asset or via npm if using a bundler with `wxt`).
+-   [x] **Develop Content Script:** Create a `content/extractor.js` (or similar) script.
+-   [x] **Implement Extraction Logic:**
+    -   [x] Write code in the content script to clone `document.body`.
+    -   [x] Instantiate `Readability` with the cloned body and `window.location.href`.
+    -   [x] Call `readability.parse()`.
+    -   [x] Handle potential errors during parsing.
+-   [x] **Communication:** Set up messaging (using `browser.runtime.sendMessage` or `wxt/messaging`) for other parts of the extension (like the popup or background script) to request the extracted content from the content script.
 -   [ ] **Refine Extraction (Optional):** Test on various websites and potentially add pre- or post-processing steps if `Readability.js` alone isn't sufficient for certain edge cases (though usually it's quite good).
 -   [ ] **Testing:** Test content extraction on diverse websites (news articles, blogs, forums, static pages, simple dynamic pages).

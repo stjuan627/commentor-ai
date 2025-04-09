@@ -6,27 +6,27 @@ Develop a browser extension using the `wxt` framework. The primary function of t
 
 ## 2. TODO List
 
--   [ ] **Project Setup:** Initialize a new `wxt` project or configure the existing one for this feature.
--   [ ] **Content Extraction:** Implement content extraction as defined in [`feature_content_extraction.md`](./feature_content_extraction.md).
+-   [x] **Project Setup:** Initialize a new `wxt` project or configure the existing one for this feature.
+-   [x] **Content Extraction:** Implement content extraction as defined in [`feature_content_extraction.md`](./feature_content_extraction.md).
 -   [ ] **LLM Integration:**
-    -   [ ] Implement a background script or service worker (`background/`) to manage communication with the LLM API.
+    -   [x] Implement a background script or service worker (`background/`) to manage communication with the LLM API.
     -   [ ] Choose an LLM API provider (e.g., OpenAI, Google Gemini, Anthropic Claude, or a self-hosted model).
     -   [ ] Implement the logic to securely send the extracted content to the LLM API and receive the generated comment.
-    -   [ ] Implement secure handling of API keys (e.g., storing in extension storage, requiring user input).
--   [ ] **User Interface (UI):**
-    -   [ ] Design and implement a user interface element (e.g., a popup via `popup/`, or potentially a sidebar) to:
-        -   [ ] Trigger the comment generation process.
-        -   [ ] Display the generated comment to the user.
-        -   [ ] Show loading/error states.
--   [ ] **Comment Insertion (Optional):**
-    -   [ ] Investigate and potentially implement functionality to automatically insert or copy the generated comment into the target comment input field on the webpage. This might require additional content script logic.
--   [ ] **Configuration:**
-    -   [ ] Create an options page (`options/`) or use the popup UI for users to configure settings, primarily the LLM API key and potentially endpoint/model selection.
--   [ ] **Error Handling:**
-    -   [ ] Implement robust error handling for potential issues like:
-        -   Failure to extract content.
-        -   LLM API errors (e.g., network issues, invalid key, rate limits).
-        -   Unexpected responses.
+    -   [x] Implement secure handling of API keys (e.g., storing in extension storage, requiring user input).
+-   [x] **User Interface (UI):**
+    -   [x] Design and implement a user interface element (e.g., a popup via `popup/`, or potentially a sidebar) to:
+        -   [x] Trigger the comment generation process.
+        -   [x] Display the generated comment to the user.
+        -   [x] Show loading/error states.
+-   [x] **Comment Insertion (Optional):**
+    -   [x] Investigate and potentially implement functionality to automatically insert or copy the generated comment into the target comment input field on the webpage. This might require additional content script logic.
+-   [x] **Configuration:**
+    -   [x] Create an options page (`options/`) or use the popup UI for users to configure settings, primarily the LLM API key and potentially endpoint/model selection.
+-   [x] **Error Handling:**
+    -   [x] Implement robust error handling for potential issues like:
+        -   [x] Failure to extract content.
+        -   [x] LLM API errors (e.g., network issues, invalid key, rate limits).
+        -   [x] Unexpected responses.
 -   [ ] **Packaging & Testing:**
     -   [ ] Test the extension across different websites.
     -   [ ] Prepare the extension for packaging (`wxt build`).
