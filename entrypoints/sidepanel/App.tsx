@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import { createLLMService } from '../../services/llm';
 import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem } from '../../types';
+import { CopyButton } from './CopyButton';
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pageContent, setPageContent] = useState<ExtractedContent | null>(null);
-  const [generatedComment, setGeneratedComment] = useState<string>('');
+  const [generatedComments, setGeneratedComments] = useState<string[]>();
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
   const [isGeneratingComment, setIsGeneratingComment] = useState(false);
   const [keywords, setKeywords] = useState<KeywordItem[]>([]);
@@ -180,41 +181,39 @@ function App() {
       }
       
       // 准备内容
-      const contentToSend = `标题：${content.title}\n\n内容：${content.content}`;
+      const contentToSend = `# ${content.title}\n\n${content.content}`;
       
       // 提取关键词列表
       const keywordsList = keywords.map(k => k.keyword);
       
       // 根据页面语言决定是否生成双语评论
-      let comment = '';
+      const comments: string[] = [];
       
+      console.log('pageLanguage', pageLanguage);
       if (pageLanguage && pageLanguage !== 'en' && pageLanguage !== '') {
-        // 生成英文评论
-        const englishComment = await llmService.generateComment(contentToSend, llmSettings.promptTemplate, {
-          content: contentToSend,
-          keywords: keywordsList,
-          langcode: 'en'
-        });
-        
-        // 生成当前语言的评论
-        const localComment = await llmService.generateComment(contentToSend, llmSettings.promptTemplate, {
+        const args = {
           content: contentToSend,
           keywords: keywordsList,
           langcode: pageLanguage
-        });
-        
-        // 合并两种语言的评论
-        comment = `[English]\n${englishComment}\n\n[${pageLanguage}]\n${localComment}`;
+        };
+        // 生成英文评论
+        const [englishComment, localComment] = await Promise.all([
+          llmService.generateComment(contentToSend, llmSettings.promptTemplate, { ...args, langcode: 'en' }),
+          llmService.generateComment(contentToSend, llmSettings.promptTemplate, args)
+        ]);
+
+        comments.push(englishComment, localComment);
       } else {
         // 只生成英文评论
-        comment = await llmService.generateComment(contentToSend, llmSettings.promptTemplate, {
+        const comment = await llmService.generateComment(contentToSend, llmSettings.promptTemplate, {
           content: contentToSend,
           keywords: keywordsList,
           langcode: 'en'
         });
+        comments.push(comment);
       }
       
-      setGeneratedComment(comment);
+      setGeneratedComments(comments);
     } catch (err) {
       console.error('Error generating comment:', err);
       setError(err instanceof Error ? err.message : '生成评论时发生错误');
@@ -237,7 +236,7 @@ function App() {
       const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
       
       if (format === 'html') {
-        result = result.replace(regex, `<a href="${url}" target="_blank">${keyword}</a>`);
+        result = result.replace(regex, `<a href="${url}">${keyword}</a>`);
       } else { // markdown
         result = result.replace(regex, `[${keyword}](${url})`);
       }
@@ -247,49 +246,55 @@ function App() {
   };
   
   // 复制纯文本评论到剪贴板
-  const copyToClipboard = () => {
-    if (generatedComment) {
-      navigator.clipboard.writeText(generatedComment)
-        .then(() => {
-          alert('评论已复制到剪贴板');
-        })
-        .catch(err => {
-          setError('复制到剪贴板失败: ' + err.message);
-        });
+  const copyToClipboard = (comment: string) => {
+    if (comment) {
+      navigator.clipboard.writeText(comment).catch(err => {
+        setError('复制到剪贴板失败: ' + err.message);
+      });
     }
   };
   
   // 复制带HTML链接的评论到剪贴板
-  const copyAsHtmlLinks = () => {
-    if (generatedComment) {
-      const commentWithLinks = addLinksToComment(generatedComment, 'html');
-      navigator.clipboard.writeText(commentWithLinks)
-        .then(() => {
-          alert('带HTML链接的评论已复制到剪贴板');
-        })
-        .catch(err => {
-          setError('复制到剪贴板失败: ' + err.message);
-        });
+  const copyAsHtmlLinks = (comment: string) => {
+    if (comment) {
+      const commentWithLinks = addLinksToComment(comment, 'html');
+      navigator.clipboard.writeText(commentWithLinks).catch(err => {
+        setError('复制到剪贴板失败: ' + err.message);
+      });
     }
   };
   
   // 复制带Markdown链接的评论到剪贴板
-  const copyAsMarkdownLinks = () => {
-    if (generatedComment) {
-      const commentWithLinks = addLinksToComment(generatedComment, 'markdown');
-      navigator.clipboard.writeText(commentWithLinks)
-        .then(() => {
-          alert('带Markdown链接的评论已复制到剪贴板');
-        })
-        .catch(err => {
-          setError('复制到剪贴板失败: ' + err.message);
-        });
+  const copyAsMarkdownLinks = (comment: string) => {
+    if (comment) {
+      const commentWithLinks = addLinksToComment(comment, 'markdown');
+      navigator.clipboard.writeText(commentWithLinks).catch(err => {
+        setError('复制到剪贴板失败: ' + err.message);
+      });
     }
   };
 
+  // 高亮关键词
+  const highlightKeywords = (text: string) => {
+    let result = text;
+    
+    // 按关键词长度排序，优先替换较长的关键词，避免部分替换问题
+    const sortedKeywords = [...keywords].sort((a, b) => b.keyword.length - a.keyword.length);
+    
+    for (const keywordItem of sortedKeywords) {
+      const { keyword } = keywordItem;
+      // 使用正则表达式匹配整个单词
+      const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+      
+      result = result.replace(regex, `<span class="text-accent">${keyword}</span>`);
+    }
+    
+    return result;
+  };
+
   return (
-    <div className="w-full h-full bg-base-100 p-4">
-      <h1 className="text-2xl font-bold text-center mb-4">Commentor.ai</h1>
+    <div className="w-full h-full bg-base-100 p-0">
+      <h1 className="text-2xl font-bold text-center mb-8">Commentor.ai</h1>
       
       {/* 错误提示 */}
       {error && (
@@ -379,11 +384,15 @@ function App() {
       
       {/* 生成评论按钮 */}
       <button 
-        className={`btn btn-secondary w-full mb-4 ${isGeneratingComment || isLoading ? 'loading' : ''}`} 
+        className={`btn btn-secondary w-full mb-4`} 
         onClick={generateComment}
         disabled={isGeneratingComment || isLoading || !llmSettings || !llmSettings.provider}
       >
-        {isGeneratingComment || isLoading ? '正在生成...' : '生成评论'}
+        {isGeneratingComment || isLoading ? (
+          <>
+            <span className="loading loading-spinner"></span>正在生成
+          </>
+        ) : '生成评论'}
       </button>
       {!llmSettings?.provider && (
         <div className="text-sm text-warning mt-2 mb-4">
@@ -402,7 +411,7 @@ function App() {
       )}
       
       {/* 提取的内容 */}
-      {pageContent && (
+      {/* {pageContent && (
         <div className="w-full mb-4">
           <h2 className="text-lg font-semibold mb-2">页面内容</h2>
           <div className="card bg-base-200">
@@ -412,42 +421,35 @@ function App() {
             </div>
           </div>
         </div>
-      )}
+      )} */}
       
       {/* 生成的评论 */}
-      {generatedComment && (
+      {generatedComments && (
         <div className="mt-4">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-lg font-semibold">生成的评论</h2>
-            <div className="flex gap-1">
-              <button
-                className="btn btn-sm btn-outline"
-                onClick={copyToClipboard}
-                title="复制纯文本"
-              >
-                复制纯文本
-              </button>
-              <button
-                className="btn btn-sm btn-outline btn-primary"
-                onClick={copyAsHtmlLinks}
-                title="复制为HTML链接"
-              >
-                HTML链接
-              </button>
-              <button
-                className="btn btn-sm btn-outline btn-secondary"
-                onClick={copyAsMarkdownLinks}
-                title="复制为Markdown格式"
-              >
-                Markdown
-              </button>
+          <h2 className="text-lg font-semibold mb-2">生成的评论</h2>
+          {generatedComments.map((comment, index) => (
+            <div key={index} className="card bg-base-200 mb-2 p-0">
+              <div className="flex justify-between items-center mb-2">
+                <div className="flex gap-2 items-center flex-wrap">
+                  <CopyButton onClick={() => copyToClipboard(comment)} className="btn btn-sm btn-outline">
+                    复制纯文本
+                  </CopyButton>
+                  <CopyButton onClick={() => copyAsHtmlLinks(comment)} className="btn btn-sm btn-outline btn-primary">
+                    HTML链接
+                  </CopyButton>
+                  <CopyButton onClick={() => copyAsMarkdownLinks(comment)} className="btn btn-sm btn-outline btn-secondary">
+                    Markdown
+                  </CopyButton>
+                </div>
+              </div>
+              <div className="card-body p-0 text-start">
+                <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: highlightKeywords(comment) }}></div>
+                { index > 0 && (
+                  <span className="badge badge-outline badge-info inline-block mt-2">本地化</span>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="card bg-base-200">
-            <div className="card-body p-3">
-              <p className="whitespace-pre-wrap">{generatedComment}</p>
-            </div>
-          </div>
+          ))}
         </div>
       )}
     </div>

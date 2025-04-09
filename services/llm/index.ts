@@ -18,8 +18,8 @@ export function generatePrompt(args: PromptArgs, promptTemplate?: string): strin
   const defaultTemplate = `
 Your task is to read the article/forum discussion and then help me write a comment with the following requirements:
 - The comment should be natural to avoid spamming.
-- The comment should incorporate these keywords: {keywords}.
-- The language should be {lang}.
+- The comment should incorporate these keywords: {keywords}. And do NOT quote or emphasize the keywords.
+- The language should be {lang}. Do NOT translate the keywords.
 - Output should be plain text without any explanation.
 
 The article/forum discussion is as follows:
