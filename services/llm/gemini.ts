@@ -27,15 +27,12 @@ export class GeminiService implements LLMService {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          system_instruction: {
+            parts: [
+              { text: getSystemPrompt() }
+            ]
+          },
           contents: [
-            {
-              role: 'system',
-              parts: [
-                {
-                  text: getSystemPrompt()
-                }
-              ]
-            },
             {
               role: 'user',
               parts: [
