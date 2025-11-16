@@ -1,4 +1,4 @@
-import { generatePrompt, PromptArgs } from './index';
+import { generatePrompt, PromptArgs, getSystemPrompt } from './index';
 import type { LLMService } from './index';
 
 export class GeminiService implements LLMService {
@@ -11,7 +11,7 @@ export class GeminiService implements LLMService {
     model?: string
   ) {
     this.apiKey = apiKey;
-    this.model = model || 'gemini-2.0-flash';
+    this.model = model || 'gemini-flash-latest';
     this.apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
   }
 
@@ -29,6 +29,14 @@ export class GeminiService implements LLMService {
         body: JSON.stringify({
           contents: [
             {
+              role: 'system',
+              parts: [
+                {
+                  text: getSystemPrompt()
+                }
+              ]
+            },
+            {
               role: 'user',
               parts: [
                 {
@@ -39,9 +47,7 @@ export class GeminiService implements LLMService {
           ],
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 500,
-            topP: 0.95,
-            topK: 40
+            // maxOutputTokens: 500,
           }
         })
       });

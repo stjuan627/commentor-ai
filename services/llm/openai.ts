@@ -1,4 +1,4 @@
-import { generatePrompt, LLMService, PromptArgs } from './index';
+import { generatePrompt, LLMService, PromptArgs, getSystemPrompt } from './index';
 
 export class OpenAIService implements LLMService {
   private apiKey: string;
@@ -28,10 +28,11 @@ export class OpenAIService implements LLMService {
         body: JSON.stringify({
           model: this.model,
           messages: [
+            { role: 'system', content: getSystemPrompt() },
             { role: 'user', content: prompt }
           ],
           temperature: 0.7,
-          max_tokens: 500
+          // max_tokens: 500
         })
       });
 
