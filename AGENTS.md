@@ -26,14 +26,25 @@ pnpm compile      # TypeScript type check (no emit)
 
 ## Architecture
 
+### Directory Layout
+
+The project is organized into WXT entrypoints and shared app modules under `src/`:
+
+- **`entrypoints/`** - Extension runtime entrypoints (`background.ts`, `content/`, `sidepanel/`, `options/`).
+- **`src/services/llm/`** - LLM abstraction and provider implementations.
+- **`src/constants/`** - Shared constants (e.g. default prompt template).
+- **`src/types/`** - Shared type definitions (`llm.ts`, `keyword.ts`, `content.ts`) with a barrel export in `index.ts`.
+- **`src/hooks/`** - Shared storage/data hooks (`useLLMSettings.ts`, `useKeywords.ts`).
+- **`src/components/`** - Reusable UI components shared across entrypoints.
+
 ### WXT Entrypoints (`entrypoints/`)
 
 The extension follows WXT's convention-based entrypoint structure:
 
-- **`background.ts`** - Service worker. Routes messages between sidepanel and content scripts. Sets up `sidePanel.setPanelBehavior` for action click. Message actions: `getPageContent`, `getPageLanguage`, `openOptionsPage`.
-- **`content/index.ts`** - Content script (matches `<all_urls>`). Uses `@mozilla/readability` to extract article content from the DOM. Also detects page language from `<html lang>` / meta tags.
-- **`sidepanel/`** - Main UI. Keyword management (add/edit/delete/toggle), comment generation trigger, copy in multiple formats (TXT/HTML/Markdown/BBCode with keyword links), keyword highlighting in output.
-- **`options/`** - Settings page. LLM provider selection (OpenAI/Gemini), API key/host/model configuration, custom prompt template.
+- **`background.ts`** - Service worker. Routes messages between sidepanel and content scripts, including `getPageContent` and `getPageLanguage`.
+- **`content/index.ts`** - Content script (matches `<all_urls>`). Uses `@mozilla/readability` to extract article content from the DOM and detects page language from `<html lang>` / meta tags.
+- **`sidepanel/`** - Main UI. Includes site-based keyword management, comment generation, multi-format copy (TXT/HTML/Markdown/BBCode), and sidepanel settings tab.
+- **`options/`** - Dedicated settings page for provider setup (OpenAI/Gemini), API key/host/model/temperature/top-p configuration, and prompt template.
 
 ### Message Passing Flow
 
@@ -41,25 +52,27 @@ The extension follows WXT's convention-based entrypoint structure:
 Sidepanel → background.ts → content script → (extracts content) → background.ts → Sidepanel
 ```
 
-### LLM Services (`services/llm/`)
+### LLM Services (`src/services/llm/`)
 
-- **`index.ts`** - `LLMService` interface, factory function `createLLMService()`, prompt generation (`generatePrompt()`), system prompt (`getSystemPrompt()`)
-- **`openai.ts`** - OpenAI-compatible API client. Supports custom `apiHost` for proxies/alternative endpoints.
-- **`gemini.ts`** - Google Gemini API client via REST.
+- **`index.ts`** - `LLMService` interface, factory function `createLLMService()`, prompt generation (`generatePrompt()`), and system prompt (`getSystemPrompt()`).
+- **`openai.ts`** - OpenAI-compatible API client. Supports custom `apiHost`, configurable `temperature`, and `top_p`.
+- **`gemini.ts`** - Google Gemini API client via REST. Supports configurable `temperature` and `topP`.
 
-### Shared Types (`types/index.ts`)
+### Shared Types (`src/types/index.ts`)
 
-`LLMSettings`, `KeywordItem`, `ExtractedContent`, `ExtractResponse` - used across entrypoints and services.
+`LLMSettings`, `KeywordItem`, `ExtractedContent`, `ExtractResponse` - used across entrypoints, hooks, and services.
 
 ### Storage
 
-Uses `browser.storage.local` with two keys:
-- `llmSettings` - LLM provider config (provider, API keys, models, prompt template)
-- `keywords` - Array of `KeywordItem` (keyword, url, enabled)
+Uses `browser.storage.local` with LLM and site data:
+- `llmSettings` - LLM provider config (provider, API keys, models, optional `temperature`/`topP`, and prompt template)
+- `sites` - Array of `SiteItem` with per-site keywords
+- Legacy `keywords` is auto-migrated into a default site on first load when `sites` is missing
 
 ## Key Behaviors
 
 - For non-English pages, generates **two comments** in parallel: one English, one in the detected page language.
 - Keywords are paired with URLs; when copying, keywords in the comment text are replaced with links in the chosen format.
 - The `OpenAIService` supports custom API hosts, making it compatible with any OpenAI-compatible API.
+- Prompt template defaults to empty in settings UI; the app uses `DEFAULT_PROMPT_TEMPLATE` as runtime fallback and as textarea placeholder.
 - UI text is in Chinese (简体中文).
