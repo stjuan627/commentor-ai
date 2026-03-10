@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import type { LLMSettings } from '../../src/types';
+import { DEFAULT_PROMPT_TEMPLATE } from '../../src/constants/prompt';
 
 function App() {
   const [settings, setSettings] = useState<LLMSettings>({
     provider: null,
-    promptTemplate: '请对以下内容进行评论：\n\n{content}'
+    promptTemplate: ''
   });
   const [status, setStatus] = useState<string>('');
 
@@ -204,7 +205,7 @@ function App() {
                   promptTemplate: value,
                 }));
               }}
-              placeholder="请输入 Prompt 模板，使用 {content} 作为网页内容的占位符"
+              placeholder={DEFAULT_PROMPT_TEMPLATE}
               rows={4}
             />
             <span className="label-text-alt mt-1">使用 {'{content}'} 作为网页内容的占位符</span>

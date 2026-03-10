@@ -1,6 +1,7 @@
 import { OpenAIService } from './openai';
 import { GeminiService } from './gemini';
 import { LLMSettings } from '../../types';
+import { DEFAULT_PROMPT_TEMPLATE } from '../../constants/prompt';
 
 export interface LLMService {
   generateComment(content: string, promptTemplate?: string, promptArgs?: PromptArgs): Promise<string>;
@@ -36,15 +37,7 @@ The article/forum discussion is as follows:
 export function generatePrompt(args: PromptArgs, promptTemplate?: string): string {
   const lang = args.langcode || 'en';
   const keywords = args.keywords ? args.keywords.join(', ') : '';
-  const defaultTemplate = `
-{
-  "content": "{content}",
-  "keywords": "{keywords}",
-  "language": "{lang}",
-  "word_count": "{word_count}"
-}
-`;
-  const template = promptTemplate || defaultTemplate;
+  const template = promptTemplate || DEFAULT_PROMPT_TEMPLATE;
   return template
     .replace('{content}', args.content)
     .replace('{keywords}', keywords)
