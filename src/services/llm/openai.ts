@@ -4,15 +4,21 @@ export class OpenAIService implements LLMService {
   private apiKey: string;
   private apiHost: string;
   private model: string;
+  private temperature?: number;
+  private topP?: number;
 
   constructor(
     apiKey: string,
     apiHost?: string,
-    model?: string
+    model?: string,
+    temperature?: number,
+    topP?: number
   ) {
     this.apiKey = apiKey;
     this.apiHost = apiHost || 'https://api.openai.com/v1';
     this.model = model || 'gpt-4o';
+    this.temperature = temperature;
+    this.topP = topP;
   }
 
   async generateComment(content: string, promptTemplate?: string, promptArgs?: PromptArgs): Promise<string> {
@@ -31,7 +37,8 @@ export class OpenAIService implements LLMService {
             { role: 'system', content: getSystemPrompt() },
             { role: 'user', content: prompt }
           ],
-          temperature: 0.7,
+          temperature: this.temperature ?? 0.7,
+          top_p: this.topP ?? 1,
           // max_tokens: 500
         })
       });

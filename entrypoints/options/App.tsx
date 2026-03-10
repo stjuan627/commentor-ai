@@ -9,6 +9,14 @@ function App() {
   });
   const [status, setStatus] = useState<string>('');
 
+  const parseOptionalNumber = (value: string): number | undefined => {
+    if (value === '') {
+      return undefined;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
   useEffect(() => {
     browser.storage.local.get('llmSettings').then((result: { llmSettings?: LLMSettings }) => {
       if (result.llmSettings) {
@@ -24,11 +32,30 @@ function App() {
 
   const handleOpenAIChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target;
+    const parsedValue = name === 'temperature' || name === 'topP'
+      ? parseOptionalNumber(value)
+      : value;
+
     setSettings(prev => ({
       ...prev,
       openai: {
         ...prev.openai,
-        [name]: value,
+        [name]: parsedValue,
+      },
+    }));
+  };
+
+  const handleGeminiChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target;
+    const parsedValue = name === 'temperature' || name === 'topP'
+      ? parseOptionalNumber(value)
+      : value;
+
+    setSettings(prev => ({
+      ...prev,
+      gemini: {
+        ...prev.gemini,
+        [name]: parsedValue,
       },
     }));
   };
@@ -127,6 +154,42 @@ function App() {
                 placeholder="例如：gpt-4o"
               />
             </div>
+
+            <div className="form-control mt-4">
+              <label className="label" htmlFor="openaiTemperature">
+                <span className="label-text">Temperature (可选)</span>
+              </label>
+              <input
+                type="number"
+                id="openaiTemperature"
+                name="temperature"
+                className="input input-bordered w-full"
+                value={settings.openai?.temperature ?? ''}
+                onChange={handleOpenAIChange}
+                placeholder="默认：0.7"
+                min={0}
+                max={2}
+                step={0.1}
+              />
+            </div>
+
+            <div className="form-control mt-4">
+              <label className="label" htmlFor="openaiTopP">
+                <span className="label-text">Top P (可选)</span>
+              </label>
+              <input
+                type="number"
+                id="openaiTopP"
+                name="topP"
+                className="input input-bordered w-full"
+                value={settings.openai?.topP ?? ''}
+                onChange={handleOpenAIChange}
+                placeholder="默认：1"
+                min={0}
+                max={1}
+                step={0.1}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -146,16 +209,7 @@ function App() {
                 name="apiKey"
                 className="input input-bordered w-full"
                 value={settings.gemini?.apiKey || ''}
-                onChange={(event) => {
-                  const { name, value } = event.target;
-                  setSettings(prev => ({
-                    ...prev,
-                    gemini: {
-                      ...prev.gemini,
-                      [name]: value,
-                    },
-                  }));
-                }}
+                onChange={handleGeminiChange}
                 placeholder="输入您的 Gemini API Key"
               />
             </div>
@@ -170,17 +224,44 @@ function App() {
                 name="model"
                 className="input input-bordered w-full"
                 value={settings.gemini?.model || ''}
-                onChange={(event) => {
-                  const { name, value } = event.target;
-                  setSettings(prev => ({
-                    ...prev,
-                    gemini: {
-                      ...prev.gemini,
-                      [name]: value,
-                    },
-                  }));
-                }}
+                onChange={handleGeminiChange}
                 placeholder="例如：gemini-pro"
+              />
+            </div>
+
+            <div className="form-control mt-4">
+              <label className="label" htmlFor="geminiTemperature">
+                <span className="label-text">Temperature (可选)</span>
+              </label>
+              <input
+                type="number"
+                id="geminiTemperature"
+                name="temperature"
+                className="input input-bordered w-full"
+                value={settings.gemini?.temperature ?? ''}
+                onChange={handleGeminiChange}
+                placeholder="默认：0.7"
+                min={0}
+                max={2}
+                step={0.1}
+              />
+            </div>
+
+            <div className="form-control mt-4">
+              <label className="label" htmlFor="geminiTopP">
+                <span className="label-text">Top P (可选)</span>
+              </label>
+              <input
+                type="number"
+                id="geminiTopP"
+                name="topP"
+                className="input input-bordered w-full"
+                value={settings.gemini?.topP ?? ''}
+                onChange={handleGeminiChange}
+                placeholder="默认：1"
+                min={0}
+                max={1}
+                step={0.1}
               />
             </div>
           </div>

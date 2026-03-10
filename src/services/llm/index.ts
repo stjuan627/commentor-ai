@@ -96,7 +96,9 @@ export function createLLMService(settings: LLMSettings): LLMService | null {
       return new OpenAIService(
         settings.openai.apiKey,
         settings.openai.apiHost,
-        settings.openai.model
+        settings.openai.model,
+        settings.openai.temperature,
+        settings.openai.topP
       );
     case 'gemini':
       if (!settings.gemini?.apiKey) {
@@ -104,7 +106,9 @@ export function createLLMService(settings: LLMSettings): LLMService | null {
       }
       return new GeminiService(
         settings.gemini.apiKey,
-        settings.gemini.model
+        settings.gemini.model,
+        settings.gemini.temperature,
+        settings.gemini.topP
       );
     default:
       return null;

@@ -5,9 +5,13 @@ export interface LLMSettings {
     apiKey?: string;
     apiHost?: string;
     model?: string;
+    temperature?: number;
+    topP?: number;
   };
   gemini?: {
     apiKey?: string;
     model?: string;
+    temperature?: number;
+    topP?: number;
   };
 }

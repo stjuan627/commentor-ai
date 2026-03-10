@@ -5,14 +5,20 @@ export class GeminiService implements LLMService {
   private apiKey: string;
   private model: string;
   private apiEndpoint: string;
+  private temperature?: number;
+  private topP?: number;
 
   constructor(
     apiKey: string,
-    model?: string
+    model?: string,
+    temperature?: number,
+    topP?: number
   ) {
     this.apiKey = apiKey;
     this.model = model || 'gemini-flash-latest';
     this.apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
+    this.temperature = temperature;
+    this.topP = topP;
   }
 
   async generateComment(content: string, promptTemplate?: string, promptArgs?: PromptArgs): Promise<string> {
@@ -43,7 +49,8 @@ export class GeminiService implements LLMService {
             }
           ],
           generationConfig: {
-            temperature: 0.7,
+            temperature: this.temperature ?? 0.7,
+            topP: this.topP ?? 1,
             // maxOutputTokens: 500,
           }
         })
