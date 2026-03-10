@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 import { createLLMService } from '../../src/services/llm';
-import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem } from '../../src/types';
-import { KeywordManager, CommentOutput } from './components';
+import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem, SiteItem } from '../../src/types';
+import { SiteKeywordSelector, SiteManager, CommentOutput, SettingsPanel } from './components';
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
@@ -10,7 +10,24 @@ function App() {
   const [generatedComments, setGeneratedComments] = useState<string[]>();
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
   const [isGeneratingComment, setIsGeneratingComment] = useState(false);
-  const [keywords, setKeywords] = useState<KeywordItem[]>([]);
+  const [sites, setSites] = useState<SiteItem[]>([]);
+  const [activeTab, setActiveTab] = useState<'comment' | 'sites' | 'settings'>('comment');
+
+  const hasValidProviderConfig = (settings: LLMSettings | null) => {
+    if (!settings?.provider) {
+      return false;
+    }
+
+    if (settings.provider === 'openai') {
+      return Boolean(settings.openai?.apiKey);
+    }
+
+    if (settings.provider === 'gemini') {
+      return Boolean(settings.gemini?.apiKey);
+    }
+
+    return false;
+  };
 
   useEffect(() => {
     browser.storage.local.get('llmSettings').then((result: { llmSettings?: LLMSettings }) => {
@@ -22,14 +39,51 @@ function App() {
       setError('加载 LLM 设置失败');
     });
 
-    browser.storage.local.get('keywords').then((result: { keywords?: KeywordItem[] }) => {
-      if (result.keywords) {
-        setKeywords(result.keywords);
+    browser.storage.local.get(['sites', 'keywords']).then((result: { sites?: SiteItem[]; keywords?: KeywordItem[] }) => {
+      if (Array.isArray(result.sites)) {
+        setSites(result.sites);
+        return;
+      }
+
+      if (Array.isArray(result.keywords) && result.keywords.length > 0) {
+        const migratedSites: SiteItem[] = [
+          {
+            id: 'default-site',
+            name: '默认站点',
+            keywords: result.keywords,
+          },
+        ];
+        setSites(migratedSites);
+        browser.storage.local.set({ sites: migratedSites }).catch((err) => {
+          console.error('Error persisting migrated sites:', err);
+        });
       }
     }).catch(err => {
-      console.error('Error loading keywords:', err);
-      setError('加载关键词失败');
+      console.error('Error loading sites:', err);
+      setError('加载站点失败');
     });
+
+    const refreshLlmSettings = () => {
+      browser.storage.local.get('llmSettings').then((result: { llmSettings?: LLMSettings }) => {
+        setLlmSettings(result.llmSettings ?? null);
+      }).catch(err => {
+        console.error('Error refreshing LLM settings:', err);
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshLlmSettings();
+      }
+    };
+
+    window.addEventListener('focus', refreshLlmSettings);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', refreshLlmSettings);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const getPageLanguage = async (): Promise<string> => {
@@ -45,7 +99,25 @@ function App() {
     }
   };
 
+  const allKeywords = sites.flatMap((site) => site.keywords);
+  const enabledKeywords = allKeywords.filter((item) => item.enabled);
+
+  const persistSites = async (nextSites: SiteItem[]) => {
+    setSites(nextSites);
+    await browser.storage.local.set({ sites: nextSites });
+  };
+
   const generateComment = async () => {
+    if (!llmSettings?.provider) {
+      setError('请先在设置页配置 LLM 提供商');
+      return;
+    }
+
+    if (!hasValidProviderConfig(llmSettings)) {
+      setError('请先在设置页配置 API Key');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -94,7 +166,7 @@ function App() {
       }
 
       const contentToSend = `# ${content.title}\n\n${content.content}`;
-      const keywordsList = keywords.filter(k => k.enabled).map(k => k.keyword);
+      const keywordsList = enabledKeywords.map((item) => item.keyword);
       const comments: string[] = [];
 
       if (langcode && langcode !== 'en' && langcode !== '') {
@@ -127,34 +199,88 @@ function App() {
     }
   };
 
-  const handleAddKeyword = async (keyword: Omit<KeywordItem, 'enabled'>) => {
-    const newKeyword: KeywordItem = { ...keyword, enabled: true };
-    const updatedKeywords = [...keywords, newKeyword];
-    setKeywords(updatedKeywords);
-    await browser.storage.local.set({ keywords: updatedKeywords });
+  const handleAddSite = async (name: string) => {
+    const nextSites: SiteItem[] = [
+      ...sites,
+      {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name,
+        keywords: [],
+      },
+    ];
+    await persistSites(nextSites);
   };
 
-  const handleUpdateKeyword = async (index: number, keyword: KeywordItem) => {
-    const updatedKeywords = [...keywords];
-    updatedKeywords[index] = keyword;
-    setKeywords(updatedKeywords);
-    await browser.storage.local.set({ keywords: updatedKeywords });
+  const handleUpdateSite = async (siteId: string, name: string) => {
+    const nextSites = sites.map((site) => (site.id === siteId ? { ...site, name } : site));
+    await persistSites(nextSites);
   };
 
-  const handleDeleteKeyword = async (index: number) => {
-    const updatedKeywords = keywords.filter((_, i) => i !== index);
-    setKeywords(updatedKeywords);
-    await browser.storage.local.set({ keywords: updatedKeywords });
+  const handleDeleteSite = async (siteId: string) => {
+    const nextSites = sites.filter((site) => site.id !== siteId);
+    await persistSites(nextSites);
   };
 
-  const handleToggleKeyword = async (index: number) => {
-    const updatedKeywords = [...keywords];
-    updatedKeywords[index] = {
-      ...updatedKeywords[index],
-      enabled: !updatedKeywords[index].enabled
-    };
-    setKeywords(updatedKeywords);
-    await browser.storage.local.set({ keywords: updatedKeywords });
+  const handleAddKeyword = async (siteId: string, keyword: Omit<KeywordItem, 'enabled'>) => {
+    const nextSites = sites.map((site) => {
+      if (site.id !== siteId) return site;
+      return {
+        ...site,
+        keywords: [...site.keywords, { ...keyword, enabled: true }],
+      };
+    });
+    await persistSites(nextSites);
+  };
+
+  const handleUpdateKeyword = async (siteId: string, keywordIndex: number, keyword: Omit<KeywordItem, 'enabled'>) => {
+    const nextSites = sites.map((site) => {
+      if (site.id !== siteId) return site;
+      if (keywordIndex < 0 || keywordIndex >= site.keywords.length) return site;
+
+      const nextKeywords = [...site.keywords];
+      nextKeywords[keywordIndex] = {
+        ...nextKeywords[keywordIndex],
+        keyword: keyword.keyword,
+        url: keyword.url,
+      };
+
+      return {
+        ...site,
+        keywords: nextKeywords,
+      };
+    });
+    await persistSites(nextSites);
+  };
+
+  const handleDeleteKeyword = async (siteId: string, keywordIndex: number) => {
+    const nextSites = sites.map((site) => {
+      if (site.id !== siteId) return site;
+      return {
+        ...site,
+        keywords: site.keywords.filter((_, index) => index !== keywordIndex),
+      };
+    });
+    await persistSites(nextSites);
+  };
+
+  const handleToggleKeyword = async (siteId: string, keywordIndex: number) => {
+    const nextSites = sites.map((site) => {
+      if (site.id !== siteId) return site;
+      if (keywordIndex < 0 || keywordIndex >= site.keywords.length) return site;
+
+      const nextKeywords = [...site.keywords];
+      nextKeywords[keywordIndex] = {
+        ...nextKeywords[keywordIndex],
+        enabled: !nextKeywords[keywordIndex].enabled,
+      };
+
+      return {
+        ...site,
+        keywords: nextKeywords,
+      };
+    });
+
+    await persistSites(nextSites);
   };
 
   const handleCopy = (comment: string, format: 'txt' | 'html' | 'markdown' | 'bbcode') => {
@@ -164,8 +290,7 @@ function App() {
       });
     } else {
       let result = comment;
-      const sortedKeywords = [...keywords]
-        .filter(k => k.enabled)
+      const sortedKeywords = [...enabledKeywords]
         .sort((a, b) => b.keyword.length - a.keyword.length);
 
       for (const { keyword, url } of sortedKeywords) {
@@ -185,19 +310,33 @@ function App() {
     }
   };
 
-  const openOptionsPage = () => {
-    browser.runtime.sendMessage({ action: 'openOptionsPage' })
-      .then(response => {
-        if (response?.action === 'openOptionsInSidepanel') {
-          window.open('/options.html', '_blank');
-        }
-      })
-      .catch(err => console.error('Error opening options page:', err));
-  };
-
   return (
     <div className="w-full h-full bg-base-100 p-4">
       <h1 className="text-3xl uppercase tracking-tight font-bold text-center mb-8">Commentor.AI</h1>
+
+      <div className="tabs tabs-boxed mb-4">
+        <button
+          type="button"
+          className={`tab ${activeTab === 'comment' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('comment')}
+        >
+          评论
+        </button>
+        <button
+          type="button"
+          className={`tab ${activeTab === 'sites' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('sites')}
+        >
+          站点
+        </button>
+        <button
+          type="button"
+          className={`tab ${activeTab === 'settings' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          设置
+        </button>
+      </div>
 
       {error && (
         <div className="alert alert-error mb-4">
@@ -205,46 +344,65 @@ function App() {
         </div>
       )}
 
-      <KeywordManager
-        keywords={keywords}
-        onAdd={handleAddKeyword}
-        onUpdate={handleUpdateKeyword}
-        onDelete={handleDeleteKeyword}
-        onToggle={handleToggleKeyword}
-      />
+      <div className={activeTab === 'comment' ? 'block' : 'hidden'}>
+          <SiteKeywordSelector
+            sites={sites}
+            onToggle={handleToggleKeyword}
+          />
 
-      <button
-        type="button"
-        className="btn btn-warning w-full mb-4"
-        onClick={generateComment}
-        disabled={isGeneratingComment || isLoading || !llmSettings?.provider}
-      >
-        {isGeneratingComment || isLoading ? (
-          <>
-            <span className="loading loading-spinner"></span>正在生成
-          </>
-        ) : '生成评论'}
-      </button>
-
-      {!llmSettings?.provider && (
-        <div className="text-sm text-warning mt-2 mb-4">
-          请先在
           <button
             type="button"
-            onClick={openOptionsPage}
-            className="text-info underline"
+            className="btn btn-warning w-full mb-4"
+            onClick={generateComment}
+            disabled={isGeneratingComment || isLoading || !hasValidProviderConfig(llmSettings)}
           >
-            选项页面
+            {isGeneratingComment || isLoading ? (
+              <>
+                <span className="loading loading-spinner"></span>正在生成
+              </>
+            ) : '生成评论'}
           </button>
-          设置 LLM 提供商
-        </div>
-      )}
 
-      <CommentOutput
-        comments={generatedComments || []}
-        keywords={keywords}
-        onCopy={handleCopy}
-      />
+          {!llmSettings?.provider && (
+            <div className="text-sm text-warning mt-2 mb-4">
+              请先前往
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className="text-info underline"
+              >
+                设置
+              </button>
+              标签页配置 LLM 提供商与 API Key
+            </div>
+          )}
+
+          <CommentOutput
+            comments={generatedComments || []}
+            keywords={allKeywords}
+            onCopy={handleCopy}
+          />
+      </div>
+
+      <div className={activeTab === 'sites' ? 'block' : 'hidden'}>
+        <SiteManager
+          sites={sites}
+          onAddSite={handleAddSite}
+          onUpdateSite={handleUpdateSite}
+          onDeleteSite={handleDeleteSite}
+          onAddKeyword={handleAddKeyword}
+          onUpdateKeyword={handleUpdateKeyword}
+          onDeleteKeyword={handleDeleteKeyword}
+          onToggleKeyword={handleToggleKeyword}
+        />
+      </div>
+
+      <div className={activeTab === 'settings' ? 'block' : 'hidden'}>
+        <SettingsPanel
+          llmSettings={llmSettings}
+          onSaved={setLlmSettings}
+        />
+      </div>
     </div>
   );
 }
