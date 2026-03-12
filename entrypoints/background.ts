@@ -1,4 +1,5 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import * as authService from '../src/services/auth';
 
 export default defineBackground(() => {
   console.log('Commentor.ai background service started', { id: browser.runtime.id });
@@ -82,10 +83,8 @@ export default defineBackground(() => {
     }
     
     if (message.action === 'getPageContent') {
-      // 使用立即执行函数处理异步操作
       (async () => {
         try {
-          // 获取当前活动标签页
           const tabs = await browser.tabs.query({ active: true, currentWindow: true });
           if (!tabs || tabs.length === 0) {
             sendResponse({ success: false, error: 'No active tab found' });
@@ -98,17 +97,14 @@ export default defineBackground(() => {
             return;
           }
           
-          // 确保内容脚本已注入
           const isInjected = await ensureContentScriptInjected(activeTab.id);
           if (!isInjected) {
             sendResponse({ success: false, error: 'Failed to inject content script' });
             return;
           }
           
-          // 向 content script 发送消息，请求提取内容
           try {
             const response = await browser.tabs.sendMessage(activeTab.id, { action: 'extractContent' });
-            // 将内容返回给发送者
             sendResponse(response);
           } catch (error: unknown) {
             console.error('Error communicating with content script:', error);
@@ -126,10 +122,58 @@ export default defineBackground(() => {
         }
       })();
       
-      return true; // 保持消息通道开放
+      return true;
+    }
+
+    if (message.action === 'authConnect') {
+      (async () => {
+        try {
+          const supported = await authService.isAuthSupported();
+          if (!supported) {
+            sendResponse({ success: false, error: 'Auth not supported in this browser' });
+            return;
+          }
+
+          const token = await authService.acquireToken(true);
+          const state = await authService.getAuthState();
+          sendResponse({ success: true, state });
+        } catch (error: unknown) {
+          console.error('Auth connect failed:', error);
+          const state = await authService.getAuthState();
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error', state });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'authDisconnect') {
+      (async () => {
+        try {
+          await authService.revokeToken();
+          const state = await authService.getAuthState();
+          sendResponse({ success: true, state });
+        } catch (error: unknown) {
+          console.error('Auth disconnect failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'authGetState') {
+      (async () => {
+        try {
+          const state = await authService.getAuthState();
+          sendResponse({ success: true, state });
+        } catch (error: unknown) {
+          console.error('Get auth state failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      })();
+      return true;
     }
     
-    return true; // 保持消息通道开放，以便异步响应
+    return true;
   });
 
   // 设置侧边栏行为

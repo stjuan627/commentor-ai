@@ -206,7 +206,7 @@ Wave 2: sync, UI, and workflow integration
 
   **Commit**: YES | Message: `feat(settings): add Google Sheets datasource configuration` | Files: [`wxt.config.ts`, `entrypoints/sidepanel/components/SettingsPanel.tsx`, `entrypoints/sidepanel/App.tsx`]
 
-- [ ] 3. Implement Chrome Google auth and token lifecycle management
+- [x] 3. Implement Chrome Google auth and token lifecycle management
 
   **What to do**: Implement a Chrome-first auth flow in background using the extension identity API. Acquire, cache, invalidate, and refresh access tokens as needed for Sheets API requests; expose background message actions so the UI can request connect/disconnect/validate status without handling tokens directly. Define a Firefox-safe fallback state so Firefox builds do not crash.
   **Must NOT do**: Must NOT place client secrets or refresh secrets in the extension. Must NOT expose raw access tokens to React component state. Must NOT block the whole extension if auth fails.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import type { LLMSettings, DatasourceConfig } from '../../../src/types';
+import type { LLMSettings, DatasourceConfig, AuthState } from '../../../src/types';
 import { DEFAULT_PROMPT_TEMPLATE } from '../../../src/constants/prompt';
 
 interface SettingsPanelProps {
@@ -22,6 +22,7 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [settings, setSettings] = useState<LLMSettings>(llmSettings ?? DEFAULT_SETTINGS);
   const [datasource, setDatasource] = useState<DatasourceConfig | null>(datasourceConfig ?? null);
+  const [authState, setAuthState] = useState<AuthState>({ status: 'disconnected' });
   const [status, setStatus] = useState<string>('');
   const [datasourceError, setDatasourceError] = useState<string>('');
   const statusTimeoutRef = useRef<number | null>(null);
@@ -32,6 +33,14 @@ export function SettingsPanel({
 
   useEffect(() => {
     setDatasource(datasourceConfig ?? null);
+    
+    browser.runtime.sendMessage({ action: 'authGetState' }).then((response: any) => {
+      if (response.success && response.state) {
+        setAuthState(response.state);
+      }
+    }).catch(err => {
+      console.error('Failed to get auth state:', err);
+    });
   }, [datasourceConfig]);
 
   useEffect(() => {
@@ -118,7 +127,7 @@ export function SettingsPanel({
     setDatasourceError('');
   };
 
-  const saveDatasource = () => {
+  const saveDatasource = async () => {
     if (!datasource) return;
 
     if (!datasource.spreadsheetId || !datasource.sheetName) {
@@ -126,18 +135,38 @@ export function SettingsPanel({
       return;
     }
 
-    browser.storage.local
-      .set({ datasourceConfig: datasource })
-      .then(() => {
-        if (onDatasourceSaved) {
-          onDatasourceSaved(datasource);
+    try {
+      const authResponse = await browser.runtime.sendMessage({ action: 'authConnect' });
+      
+      if (!authResponse.success) {
+        setDatasourceError(authResponse.error || '认证失败');
+        if (authResponse.state) {
+          setAuthState(authResponse.state);
         }
-        showStatus('数据源配置已保存');
-      })
-      .catch((error: Error) => {
-        console.error('Error saving datasource config:', error);
-        setDatasourceError('保存数据源配置失败');
-      });
+        return;
+      }
+
+      if (authResponse.state) {
+        setAuthState(authResponse.state);
+      }
+
+      const updatedDatasource = {
+        ...datasource,
+        connected: true,
+        connectedAt: new Date().toISOString(),
+      };
+
+      await browser.storage.local.set({ datasourceConfig: updatedDatasource });
+      
+      if (onDatasourceSaved) {
+        onDatasourceSaved(updatedDatasource);
+      }
+      setDatasource(updatedDatasource);
+      showStatus('数据源配置已保存并连接成功');
+    } catch (error: unknown) {
+      console.error('Error saving datasource config:', error);
+      setDatasourceError('保存数据源配置失败: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
   };
 
   return (
@@ -426,20 +455,62 @@ export function SettingsPanel({
             </div>
           )}
 
-          {datasource?.connected && (
+          {authState.status === 'connected' && (
             <div className="badge badge-success mb-3" data-testid="datasource-status">
               已连接
             </div>
           )}
 
-          <button
-            type="button"
-            className="btn btn-secondary"
-            data-testid="datasource-connect"
-            onClick={saveDatasource}
-          >
-            保存数据源配置
-          </button>
+          {authState.status === 'error' && (
+            <div className="badge badge-error mb-3">
+              认证错误: {authState.error}
+            </div>
+          )}
+
+          {authState.status === 'connecting' && (
+            <div className="badge badge-warning mb-3">
+              正在连接...
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              data-testid="datasource-connect"
+              onClick={saveDatasource}
+              disabled={authState.status === 'connecting'}
+            >
+              {authState.status === 'connected' ? '重新连接' : '保存并连接'}
+            </button>
+
+            {authState.status === 'connected' && (
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={async () => {
+                  try {
+                    await browser.runtime.sendMessage({ action: 'authDisconnect' });
+                    setAuthState({ status: 'disconnected' });
+                    if (datasource) {
+                      const updated = { ...datasource, connected: false };
+                      await browser.storage.local.set({ datasourceConfig: updated });
+                      setDatasource(updated);
+                      if (onDatasourceSaved) {
+                        onDatasourceSaved(updated);
+                      }
+                    }
+                    showStatus('已断开连接');
+                  } catch (error) {
+                    console.error('Disconnect failed:', error);
+                    setDatasourceError('断开连接失败');
+                  }
+                }}
+              >
+                断开连接
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

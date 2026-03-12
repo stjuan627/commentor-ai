@@ -59,3 +59,25 @@
 - `pnpm build` succeeds for Chrome with identity permission
 - `pnpm build:firefox` succeeds without identity permission
 - Both builds produce valid manifests
+
+## [2026-03-12] Task 3: Chrome Google Auth and Token Lifecycle
+
+### Implementation Approach
+- Created `src/services/auth.ts` with auth lifecycle functions
+- Extended `src/types/global.d.ts` to include chrome.identity API types
+- Added auth message handlers in background.ts: authConnect, authDisconnect, authGetState
+- Updated SettingsPanel to use auth state and show connection status
+- Firefox-safe: isAuthSupported() returns false when chrome.identity unavailable
+
+### Key Design Decisions
+- Background owns all token operations; sidepanel never sees raw tokens
+- Auth state stored in browser.storage.local for persistence across worker restarts
+- Interactive auth flow triggered on "保存并连接" button click
+- Disconnect button clears cached tokens and updates datasource.connected flag
+- Auth state badges show: connected (green), connecting (yellow), error (red), disconnected
+
+### Verification Results
+- `pnpm compile` passes
+- Chrome and Firefox builds succeed
+- Auth service compiles without LSP errors
+- Background message handlers properly async with sendResponse

@@ -41,3 +41,11 @@ declare const browser: {
     };
   };
 };
+
+declare const chrome: {
+  identity?: {
+    getAuthToken: (details: { interactive: boolean }) => Promise<string | undefined>;
+    removeCachedAuthToken: (details: { token: string }) => Promise<void>;
+    clearAllCachedAuthTokens: () => Promise<void>;
+  };
+};
