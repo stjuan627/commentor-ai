@@ -537,10 +537,10 @@ Wave 2: sync, UI, and workflow integration
   **Commit**: YES | Message: `chore(integration): wire library context without regressing comment flow` | Files: [`entrypoints/sidepanel/**`, `entrypoints/background.ts`, any related shared helpers]
 
 ## Final Verification Wave (4 parallel agents, ALL must APPROVE)
-- [ ] F1. Plan Compliance Audit — oracle
-- [ ] F2. Code Quality Review — unspecified-high
-- [ ] F3. Real Manual QA — unspecified-high (+ playwright if UI)
-- [ ] F4. Scope Fidelity Check — deep
+- [x] F1. Plan Compliance Audit — oracle
+- [x] F2. Code Quality Review — unspecified-high
+- [x] F3. Real Manual QA — unspecified-high (+ playwright if UI)
+- [x] F4. Scope Fidelity Check — deep
 
 ## Commit Strategy
 - Prefer **atomic commits per task** when a task leaves the repository in a coherent, compileable state.
