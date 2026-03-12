@@ -121,10 +121,19 @@ export async function batchUpdateStatus(config: DatasourceConfig, updates: Statu
   const allRecords = await fetchPageRecords(config);
 
   const data: any[] = [];
+  const conflicts: string[] = [];
+
   for (const update of updates) {
     const recordIndex = allRecords.findIndex(r => r.pageKey === update.pageKey);
     if (recordIndex === -1) {
       console.warn(`Record not found for pageKey: ${update.pageKey}`);
+      continue;
+    }
+
+    const currentRecord = allRecords[recordIndex];
+    if (currentRecord.version >= update.version) {
+      conflicts.push(update.pageKey);
+      console.warn(`Version conflict for pageKey ${update.pageKey}: current=${currentRecord.version}, update=${update.version}`);
       continue;
     }
 
@@ -145,6 +154,10 @@ export async function batchUpdateStatus(config: DatasourceConfig, updates: Statu
       range: `${config.sheetName}!${updatedAtCol}${rowNumber}`,
       values: [[new Date().toISOString()]],
     });
+  }
+
+  if (conflicts.length > 0) {
+    throw new Error(`Version conflicts detected for: ${conflicts.join(', ')}`);
   }
 
   if (data.length === 0) {

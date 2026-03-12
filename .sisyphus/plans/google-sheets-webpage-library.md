@@ -330,7 +330,7 @@ Wave 2: sync, UI, and workflow integration
 
   **Commit**: YES | Message: `feat(background): add datasource gateway message protocol` | Files: [`entrypoints/background.ts`, related shared message/type files]
 
-- [ ] 6. Implement local snapshot caching, persistent sync queue, and versioned patch sync
+- [x] 6. Implement local snapshot caching, persistent sync queue, and versioned patch sync
 
   **What to do**: Add a local snapshot store for normalized library rows plus a persistent queue for pending status patches. Reads should return cached rows immediately and then reconcile against the sheet. Writes should update local state optimistically, enqueue a patch, and flush via background with exponential backoff, `version` checks, and deterministic retry/error metadata.
   **Must NOT do**: Must NOT drop failed writes silently. Must NOT keep pending patches only in memory. Must NOT overwrite remote rows blindly after version mismatch.

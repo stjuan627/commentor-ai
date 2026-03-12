@@ -1,10 +1,13 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import * as authService from '../src/services/auth';
 import * as sheetsService from '../src/services/sheets';
+import { schedulePeriodicSync } from '../src/services/sync';
 import type { DatasourceConfig, LibrarySnapshot } from '../src/types';
 
 export default defineBackground(() => {
   console.log('Commentor.ai background service started', { id: browser.runtime.id });
+
+  schedulePeriodicSync();
 
   // 检查内容脚本是否已注入
   async function ensureContentScriptInjected(tabId: number): Promise<boolean> {

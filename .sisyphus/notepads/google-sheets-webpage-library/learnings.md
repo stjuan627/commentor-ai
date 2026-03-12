@@ -127,3 +127,27 @@
 - Chrome and Firefox builds succeed
 - Extended global.d.ts with browser.tabs.create type
 - Message handlers follow existing async pattern with sendResponse
+
+## [2026-03-12] Task 6: Local Snapshot Caching and Persistent Sync Queue
+
+### Implementation Approach
+- Created `src/services/sync.ts` with queue flushing logic
+- schedulePeriodicSync() runs every 60 seconds to flush pending items
+- Exponential backoff: 1s, 5s, 15s for retries
+- Max 3 retry attempts before marking as error
+- Version conflict detection in batchUpdateStatus()
+- Conflicts throw error instead of silently overwriting
+
+### Key Design Decisions
+- Sync queue stored in browser.storage.local for persistence
+- Queue items have states: pending, retrying, synced, error
+- Optimistic updates: local state changes immediately in libraryStatusUpdate
+- Background periodic sync flushes queue automatically
+- Version check: current >= update = conflict
+- Failed items remain in queue with retry count and last error
+
+### Verification Results
+- `pnpm compile` passes
+- Chrome and Firefox builds succeed
+- Periodic sync scheduled on background startup
+- Version conflicts detected and reported
