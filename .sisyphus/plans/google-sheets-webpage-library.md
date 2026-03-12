@@ -289,7 +289,7 @@ Wave 2: sync, UI, and workflow integration
 
   **Commit**: YES | Message: `feat(datasource): add Google Sheets connector primitives` | Files: [`src/services/**`, `entrypoints/background.ts`, shared type files]
 
-- [ ] 5. Build the background datasource gateway and message protocol
+- [x] 5. Build the background datasource gateway and message protocol
 
   **What to do**: Extend the background entrypoint into the single gateway for library bootstrap, sheet refresh, open-page action, active-record resolution, and explicit status writeback. Define message shapes and return payloads so the sidepanel can request library operations without knowing auth/token details or connector internals.
   **Must NOT do**: Must NOT let sidepanel components call Google APIs directly. Must NOT leave sync queue state in memory only. Must NOT overload the existing content-extraction messages with unrelated payload shapes.

@@ -103,3 +103,27 @@
 - `pnpm compile` passes
 - No LSP errors in sheets.ts
 - Service layer properly separated from UI
+
+## [2026-03-12] Task 5: Background Datasource Gateway and Message Protocol
+
+### Implementation Approach
+- Extended background.ts with library message handlers
+- libraryBootstrap: returns cached snapshot or unconfigured status
+- libraryRefresh: fetches from Sheets and updates local snapshot
+- libraryOpenPage: creates new tab and stores active context
+- libraryStatusUpdate: optimistic local update + queue + immediate sync attempt
+- libraryGetActiveContext: retrieves current active library record
+
+### Key Design Decisions
+- All library operations go through background message protocol
+- Sidepanel never calls Google APIs directly
+- Sync queue persisted in browser.storage.local for durability
+- Optimistic updates: local state changes immediately, sync happens async
+- Failed syncs remain in queue with retry metadata
+- Active context tracks which library page is currently open
+
+### Verification Results
+- `pnpm compile` passes
+- Chrome and Firefox builds succeed
+- Extended global.d.ts with browser.tabs.create type
+- Message handlers follow existing async pattern with sendResponse

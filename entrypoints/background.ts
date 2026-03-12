@@ -1,5 +1,7 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import * as authService from '../src/services/auth';
+import * as sheetsService from '../src/services/sheets';
+import type { DatasourceConfig, LibrarySnapshot } from '../src/types';
 
 export default defineBackground(() => {
   console.log('Commentor.ai background service started', { id: browser.runtime.id });
@@ -167,6 +169,145 @@ export default defineBackground(() => {
           sendResponse({ success: true, state });
         } catch (error: unknown) {
           console.error('Get auth state failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'libraryBootstrap') {
+      (async () => {
+        try {
+          const result = await browser.storage.local.get(['datasourceConfig', 'librarySnapshot']);
+          const config: DatasourceConfig | undefined = result.datasourceConfig;
+          const cached: LibrarySnapshot | undefined = result.librarySnapshot;
+
+          if (!config || !config.connected) {
+            sendResponse({ success: true, snapshot: cached || null, status: 'unconfigured' });
+            return;
+          }
+
+          sendResponse({ success: true, snapshot: cached || null, status: 'ok' });
+        } catch (error: unknown) {
+          console.error('Library bootstrap failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'libraryRefresh') {
+      (async () => {
+        try {
+          const result = await browser.storage.local.get('datasourceConfig');
+          const config: DatasourceConfig | undefined = result.datasourceConfig;
+
+          if (!config || !config.connected) {
+            sendResponse({ success: false, error: 'Datasource not configured', status: 'unconfigured' });
+            return;
+          }
+
+          const records = await sheetsService.fetchPageRecords(config);
+          const snapshot: LibrarySnapshot = {
+            records,
+            fetchedAt: new Date().toISOString(),
+          };
+
+          await browser.storage.local.set({ librarySnapshot: snapshot });
+          sendResponse({ success: true, snapshot });
+        } catch (error: unknown) {
+          console.error('Library refresh failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error', retryable: true });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'libraryOpenPage') {
+      (async () => {
+        try {
+          const { url, pageKey, siteKey } = message;
+          if (!url) {
+            sendResponse({ success: false, error: 'URL is required' });
+            return;
+          }
+
+          const tab = await browser.tabs.create({ url, active: true });
+          const activeContext = {
+            pageKey,
+            siteKey,
+            tabId: tab.id,
+            boundAt: new Date().toISOString(),
+          };
+          await browser.storage.local.set({ activeLibraryContext: activeContext });
+          sendResponse({ success: true, tabId: tab.id, activeContext });
+        } catch (error: unknown) {
+          console.error('Library open page failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'libraryStatusUpdate') {
+      (async () => {
+        try {
+          const { pageKey, siteKey, status, version } = message;
+          const result = await browser.storage.local.get(['datasourceConfig', 'librarySnapshot', 'syncQueue']);
+          const config: DatasourceConfig | undefined = result.datasourceConfig;
+          const snapshot: LibrarySnapshot | undefined = result.librarySnapshot;
+          const queue: any[] = result.syncQueue || [];
+
+          if (snapshot) {
+            const updatedRecords = snapshot.records.map(r =>
+              r.pageKey === pageKey && r.siteKey === siteKey
+                ? { ...r, status, version: version + 1, updatedAt: new Date().toISOString(), syncState: 'pending' as const }
+                : r
+            );
+            await browser.storage.local.set({ librarySnapshot: { ...snapshot, records: updatedRecords } });
+          }
+
+          const queueItem = {
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            pageKey,
+            siteKey,
+            status,
+            version: version + 1,
+            enqueuedAt: new Date().toISOString(),
+            retryCount: 0,
+            syncState: 'pending' as const,
+          };
+          queue.push(queueItem);
+          await browser.storage.local.set({ syncQueue: queue });
+
+          if (config && config.connected) {
+            try {
+              await sheetsService.batchUpdateStatus(config, [{ pageKey, status, version: version + 1 }]);
+              const updatedQueue = queue.filter(q => q.id !== queueItem.id);
+              await browser.storage.local.set({ syncQueue: updatedQueue });
+              sendResponse({ success: true, syncState: 'synced' });
+            } catch (syncError: unknown) {
+              console.error('Sync failed, queued for retry:', syncError);
+              sendResponse({ success: true, syncState: 'pending', error: syncError instanceof Error ? syncError.message : 'Sync failed' });
+            }
+          } else {
+            sendResponse({ success: true, syncState: 'pending' });
+          }
+        } catch (error: unknown) {
+          console.error('Library status update failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'libraryGetActiveContext') {
+      (async () => {
+        try {
+          const result = await browser.storage.local.get('activeLibraryContext');
+          sendResponse({ success: true, activeContext: result.activeLibraryContext || null });
+        } catch (error: unknown) {
+          console.error('Get active context failed:', error);
           sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();

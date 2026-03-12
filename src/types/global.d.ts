@@ -25,6 +25,7 @@ declare const browser: {
       title?: string;
     }>>;
     sendMessage: (tabId: number, message: any) => Promise<any>;
+    create: (createProperties: { url: string; active?: boolean }) => Promise<{ id?: number; url?: string }>;
   };
   storage: {
     local: {
