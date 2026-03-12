@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import type { PageRecord, LibrarySnapshot } from '../../../src/types';
+import type { PageRecord, LibrarySnapshot, PageStatus } from '../../../src/types';
 
 interface LibraryPanelProps {
   onOpenPage: (record: PageRecord) => void;
-  onStatusChange: (record: PageRecord, newStatus: 'pending' | 'done' | 'invalid') => void;
+  onStatusChange: (record: PageRecord, newStatus: PageStatus) => Promise<void>;
 }
 
 export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) {
@@ -89,6 +89,31 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
   const filteredRecords = selectedSite
     ? records.filter(r => r.siteKey === selectedSite)
     : records;
+
+  const handleStatusChange = async (record: PageRecord, newStatus: PageStatus) => {
+    if (snapshot) {
+      const updatedRecords = snapshot.records.map(r =>
+        r.pageKey === record.pageKey && r.siteKey === record.siteKey
+          ? { ...r, status: newStatus, syncState: 'pending' as const }
+          : r
+      );
+      setSnapshot({ ...snapshot, records: updatedRecords });
+    }
+
+    try {
+      await onStatusChange(record, newStatus);
+    } catch (err) {
+      if (snapshot) {
+        const revertedRecords = snapshot.records.map(r =>
+          r.pageKey === record.pageKey && r.siteKey === record.siteKey
+            ? { ...r, status: record.status, syncState: 'error' as const }
+            : r
+        );
+        setSnapshot({ ...snapshot, records: revertedRecords });
+      }
+      setError(err instanceof Error ? err.message : '更新状态失败');
+    }
+  };
 
   if (unconfigured) {
     return (
@@ -203,7 +228,7 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
                   <button
                     type="button"
                     className="btn btn-sm btn-success"
-                    onClick={() => onStatusChange(record, 'done')}
+                    onClick={() => handleStatusChange(record, 'done')}
                     data-testid="status-done"
                   >
                     标记完成
@@ -213,7 +238,7 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
                   <button
                     type="button"
                     className="btn btn-sm btn-error"
-                    onClick={() => onStatusChange(record, 'invalid')}
+                    onClick={() => handleStatusChange(record, 'invalid')}
                     data-testid="status-invalid"
                   >
                     标记无效

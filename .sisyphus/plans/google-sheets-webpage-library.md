@@ -453,7 +453,7 @@ Wave 2: sync, UI, and workflow integration
 
   **Commit**: YES | Message: `feat(workflow): open library pages and bind active records` | Files: [`entrypoints/background.ts`, `entrypoints/content/index.ts`, sidepanel integration files]
 
-- [ ] 9. Add explicit status actions and remote writeback UX
+- [x] 9. Add explicit status actions and remote writeback UX
 
   **What to do**: Add explicit per-row and active-record actions for `done` and `invalid`, with immediate local UI updates and background queue flush to Google Sheets. Surface sync state (`synced`, `pending`, `retrying`, `error`) in the library UI and active context. Persist metadata like `updatedAt`, `updatedBy` (if available), and `version`, but do not write comment text.
   **Must NOT do**: Must NOT auto-mark rows after opening the page. Must NOT auto-mark rows after generating a comment. Must NOT sync comment bodies or extracted article content.

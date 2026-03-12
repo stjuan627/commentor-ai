@@ -475,16 +475,15 @@ function App() {
           }}
           onStatusChange={async (record, newStatus) => {
             setLibraryError(null);
-            try {
-              await browser.runtime.sendMessage({
-                action: 'libraryStatusUpdate',
-                pageKey: record.pageKey,
-                siteKey: record.siteKey,
-                status: newStatus,
-                version: record.version,
-              });
-            } catch (err) {
-              setLibraryError(err instanceof Error ? err.message : '更新状态失败');
+            const response = await browser.runtime.sendMessage({
+              action: 'libraryStatusUpdate',
+              pageKey: record.pageKey,
+              siteKey: record.siteKey,
+              status: newStatus,
+              version: record.version,
+            });
+            if (!response.success) {
+              throw new Error(response.error || '更新状态失败');
             }
           }}
         />
