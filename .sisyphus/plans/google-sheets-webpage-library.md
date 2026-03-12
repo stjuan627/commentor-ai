@@ -247,7 +247,7 @@ Wave 2: sync, UI, and workflow integration
 
   **Commit**: YES | Message: `feat(auth): add Chrome Google Sheets authorization flow` | Files: [`entrypoints/background.ts`, related auth helpers, settings integration files]
 
-- [ ] 4. Implement Google Sheets connector read/write primitives
+- [x] 4. Implement Google Sheets connector read/write primitives
 
   **What to do**: Add a dedicated Google Sheets service layer that can validate the configured spreadsheet, fetch page rows into the normalized `PageRecord` shape, and submit batch status updates. Define a strict sheet schema contract for the MVP, including required columns such as `site_key`, `page_key`, `source_url`, `canonical_url`, `title`, `status`, `version`, and `updated_at`.
   **Must NOT do**: Must NOT depend on row order. Must NOT read or write through ad-hoc cell coordinates scattered through the UI. Must NOT mix connector code into React components.

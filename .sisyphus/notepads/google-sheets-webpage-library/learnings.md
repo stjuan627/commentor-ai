@@ -81,3 +81,25 @@
 - Chrome and Firefox builds succeed
 - Auth service compiles without LSP errors
 - Background message handlers properly async with sendResponse
+
+## [2026-03-12] Task 4: Google Sheets Connector Primitives
+
+### Implementation Approach
+- Created `src/services/sheets.ts` with connector functions
+- validateSheetSchema() fetches first row and validates required columns
+- fetchPageRecords() reads rows 2-1000 and normalizes into PageRecord[]
+- batchUpdateStatus() finds records by pageKey and updates status/version/updated_at
+- Uses column indices from schema, not hardcoded positions
+
+### Key Design Decisions
+- Required columns: site_key, page_key, source_url, canonical_url, title, status, version, updated_at
+- Schema validation happens on every operation to catch column changes
+- pageKey and siteKey normalized using library utility functions
+- Batch updates use Google Sheets batchUpdate API with multiple ranges
+- Column letters calculated from schema indices (A=65 + index)
+- Fetches up to 1000 rows (rows 2-1000) to avoid quota issues
+
+### Verification Results
+- `pnpm compile` passes
+- No LSP errors in sheets.ts
+- Service layer properly separated from UI
