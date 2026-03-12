@@ -494,7 +494,7 @@ Wave 2: sync, UI, and workflow integration
 
   **Commit**: YES | Message: `feat(status): add explicit library status writeback` | Files: [`entrypoints/sidepanel/**`, `entrypoints/background.ts`, connector/sync helpers]
 
-- [ ] 10. Integrate the library context with existing comment flow and harden regressions
+- [x] 10. Integrate the library context with existing comment flow and harden regressions
 
   **What to do**: Make the comment workflow aware of the active library record without changing its core LLM/content-extraction behavior. Show the bound library context in the comment view, preserve the existing keyword/site management experience, and ensure that users without datasource config can still use the extension exactly as before. Complete compile/build regression checks and capture final evidence for legacy and new flows.
   **Must NOT do**: Must NOT auto-mark status after comment generation. Must NOT require datasource setup for the legacy comment flow. Must NOT change prompt-generation behavior except where active library context is displayed.

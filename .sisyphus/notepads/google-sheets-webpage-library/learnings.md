@@ -202,3 +202,26 @@
 - Chrome build succeeds
 - Active record card has data-testid="active-library-record"
 - Error alert has data-testid="library-open-error"
+
+## [2026-03-12] Task 10: Integration and Regression Hardening
+
+### Verification Results
+- pnpm compile: PASS (zero TypeScript errors)
+- pnpm build (Chrome): PASS (435.34 kB)
+- pnpm build:firefox: PASS (435.27 kB)
+- generateComment does NOT depend on datasource
+- libraryStatusUpdate only called on explicit user action
+- Active library record shown in comment tab
+- Existing keyword/site management unchanged
+
+### Architecture Summary
+- T1: Types (library.ts, storage keys, normalization utils)
+- T2: Settings UI + Chrome manifest permissions
+- T3: Auth service (chrome.identity) + background handlers
+- T4: Sheets connector (validate, fetch, batchUpdate)
+- T5: Background gateway (bootstrap, refresh, openPage, statusUpdate)
+- T6: Sync service (periodic flush, exponential backoff, version conflicts)
+- T7: LibraryPanel component + library tab in App.tsx
+- T8: Open-page workflow + active record binding
+- T9: Optimistic status updates + error revert
+- T10: Integration verification + regression checks
