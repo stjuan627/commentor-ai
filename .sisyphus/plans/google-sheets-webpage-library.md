@@ -164,7 +164,7 @@ Wave 2: sync, UI, and workflow integration
 
   **Commit**: YES | Message: `feat(types): add library record and sync state contracts` | Files: [`src/types/*`, `entrypoints/sidepanel/App.tsx`]
 
-- [ ] 2. Add datasource settings fields and Chrome-only manifest permissions
+- [x] 2. Add datasource settings fields and Chrome-only manifest permissions
 
   **What to do**: Extend settings so the user can configure Google Sheets connection details needed for the MVP (spreadsheet ID, sheet/tab name or range contract, connect/disconnect state, and validation feedback). Update manifest/config so Chrome builds have the permissions required for Google auth and Sheets requests, while Firefox builds remain compileable and non-regressive even if datasource actions are unavailable there.
   **Must NOT do**: Must NOT add server-side secrets. Must NOT remove existing OpenAI/Gemini settings. Must NOT promise Firefox parity for Google auth.

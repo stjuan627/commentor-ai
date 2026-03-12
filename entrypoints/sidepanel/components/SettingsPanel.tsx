@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import type { LLMSettings } from '../../../src/types';
+import type { LLMSettings, DatasourceConfig } from '../../../src/types';
 import { DEFAULT_PROMPT_TEMPLATE } from '../../../src/constants/prompt';
 
 interface SettingsPanelProps {
   llmSettings: LLMSettings | null;
   onSaved: (settings: LLMSettings) => void;
+  datasourceConfig?: DatasourceConfig | null;
+  onDatasourceSaved?: (config: DatasourceConfig) => void;
 }
 
 const DEFAULT_SETTINGS: LLMSettings = {
@@ -15,14 +17,22 @@ const DEFAULT_SETTINGS: LLMSettings = {
 export function SettingsPanel({
   llmSettings,
   onSaved,
+  datasourceConfig,
+  onDatasourceSaved,
 }: SettingsPanelProps) {
   const [settings, setSettings] = useState<LLMSettings>(llmSettings ?? DEFAULT_SETTINGS);
+  const [datasource, setDatasource] = useState<DatasourceConfig | null>(datasourceConfig ?? null);
   const [status, setStatus] = useState<string>('');
+  const [datasourceError, setDatasourceError] = useState<string>('');
   const statusTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     setSettings(llmSettings ?? DEFAULT_SETTINGS);
   }, [llmSettings]);
+
+  useEffect(() => {
+    setDatasource(datasourceConfig ?? null);
+  }, [datasourceConfig]);
 
   useEffect(() => {
     return () => {
@@ -94,6 +104,39 @@ export function SettingsPanel({
       .catch((error: Error) => {
         console.error('Error saving settings:', error);
         showStatus('保存设置失败');
+      });
+  };
+
+  const handleDatasourceChange = (field: keyof DatasourceConfig, value: string | boolean) => {
+    setDatasource((prev) => ({
+      provider: 'google-sheets',
+      spreadsheetId: prev?.spreadsheetId ?? '',
+      sheetName: prev?.sheetName ?? '',
+      connected: prev?.connected ?? false,
+      [field]: value,
+    }));
+    setDatasourceError('');
+  };
+
+  const saveDatasource = () => {
+    if (!datasource) return;
+
+    if (!datasource.spreadsheetId || !datasource.sheetName) {
+      setDatasourceError('请填写 Spreadsheet ID 和 Sheet 名称');
+      return;
+    }
+
+    browser.storage.local
+      .set({ datasourceConfig: datasource })
+      .then(() => {
+        if (onDatasourceSaved) {
+          onDatasourceSaved(datasource);
+        }
+        showStatus('数据源配置已保存');
+      })
+      .catch((error: Error) => {
+        console.error('Error saving datasource config:', error);
+        setDatasourceError('保存数据源配置失败');
       });
   };
 
@@ -327,6 +370,78 @@ export function SettingsPanel({
           <span>{status}</span>
         </div>
       )}
+
+      <div className="card bg-base-200 mt-6 mb-4">
+        <div className="card-body p-4">
+          <h2 className="card-title text-lg mb-3">数据源配置</h2>
+
+          <div className="form-control mb-3">
+            <span className="label-text mb-1 block">数据源类型</span>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="datasource-provider"
+                value="google-sheets"
+                className="radio radio-primary"
+                data-testid="datasource-provider-google"
+                checked={datasource?.provider === 'google-sheets' || !datasource}
+                onChange={() => handleDatasourceChange('provider', 'google-sheets')}
+              />
+              <span>Google Sheets</span>
+            </label>
+          </div>
+
+          <div className="form-control mb-3">
+            <label className="label" htmlFor="spreadsheetId">
+              <span className="label-text">Spreadsheet ID</span>
+            </label>
+            <input
+              type="text"
+              id="spreadsheetId"
+              className="input input-bordered w-full"
+              data-testid="datasource-spreadsheet-id"
+              value={datasource?.spreadsheetId ?? ''}
+              onChange={(e) => handleDatasourceChange('spreadsheetId', e.target.value)}
+              placeholder="例如：1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+            />
+          </div>
+
+          <div className="form-control mb-3">
+            <label className="label" htmlFor="sheetName">
+              <span className="label-text">Sheet 名称</span>
+            </label>
+            <input
+              type="text"
+              id="sheetName"
+              className="input input-bordered w-full"
+              value={datasource?.sheetName ?? ''}
+              onChange={(e) => handleDatasourceChange('sheetName', e.target.value)}
+              placeholder="例如：Sheet1"
+            />
+          </div>
+
+          {datasourceError && (
+            <div className="alert alert-error mb-3" data-testid="datasource-error">
+              <span>{datasourceError}</span>
+            </div>
+          )}
+
+          {datasource?.connected && (
+            <div className="badge badge-success mb-3" data-testid="datasource-status">
+              已连接
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            data-testid="datasource-connect"
+            onClick={saveDatasource}
+          >
+            保存数据源配置
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

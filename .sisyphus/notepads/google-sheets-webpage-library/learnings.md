@@ -38,3 +38,24 @@
 - `pnpm compile` passes with zero TypeScript errors
 - LSP diagnostics clean on all modified files
 - Existing storage migration logic preserved
+
+## [2026-03-12] Task 2: Datasource Settings and Manifest Permissions
+
+### Implementation Approach
+- Updated `wxt.config.ts` to use dynamic manifest function with browser detection
+- Chrome builds get `identity` permission and Google API host_permissions
+- Firefox builds remain unchanged (no identity permission)
+- Extended SettingsPanel with datasource configuration UI
+- Added data-testid attributes for QA verification
+
+### Key Design Decisions
+- Datasource config stored separately from LLM settings in browser.storage.local
+- Validation happens client-side before save (spreadsheetId and sheetName required)
+- Error state displayed inline with data-testid="datasource-error"
+- Connected status badge shown when datasource.connected is true
+
+### Verification Results
+- `pnpm compile` passes
+- `pnpm build` succeeds for Chrome with identity permission
+- `pnpm build:firefox` succeeds without identity permission
+- Both builds produce valid manifests

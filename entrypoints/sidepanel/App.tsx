@@ -414,6 +414,8 @@ function App() {
         <SettingsPanel
           llmSettings={llmSettings}
           onSaved={setLlmSettings}
+          datasourceConfig={datasourceConfig}
+          onDatasourceSaved={setDatasourceConfig}
         />
       </div>
     </div>

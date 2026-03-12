@@ -1,0 +1,8 @@
+
+> commentor-ai@0.1.1 compile /home/james/works/tooling/commentor-crx-feat-dataset
+> tsc --noEmit
+
+Chrome build: SUCCESS
+Firefox build: SUCCESS
+Chrome identity permission: present
+Firefox identity permission: absent (correct)
