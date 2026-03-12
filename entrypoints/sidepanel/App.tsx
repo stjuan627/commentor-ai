@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 import { createLLMService } from '../../src/services/llm';
-import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem, SiteItem, DatasourceConfig, LibrarySnapshot } from '../../src/types';
-import { SiteKeywordSelector, SiteManager, CommentOutput, SettingsPanel } from './components';
+import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem, SiteItem, DatasourceConfig, LibrarySnapshot, PageRecord } from '../../src/types';
+import { SiteKeywordSelector, SiteManager, CommentOutput, SettingsPanel, LibraryPanel } from './components';
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
@@ -11,9 +11,10 @@ function App() {
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
   const [isGeneratingComment, setIsGeneratingComment] = useState(false);
   const [sites, setSites] = useState<SiteItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'comment' | 'sites' | 'settings'>('comment');
+  const [activeTab, setActiveTab] = useState<'comment' | 'sites' | 'settings' | 'library'>('comment');
   const [datasourceConfig, setDatasourceConfig] = useState<DatasourceConfig | null>(null);
   const [librarySnapshot, setLibrarySnapshot] = useState<LibrarySnapshot | null>(null);
+  const [activeLibraryRecord, setActiveLibraryRecord] = useState<PageRecord | null>(null);
 
   const hasValidProviderConfig = (settings: LLMSettings | null) => {
     if (!settings?.provider) {
@@ -337,6 +338,14 @@ function App() {
         </button>
         <button
           type="button"
+          className={`tab ${activeTab === 'library' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('library')}
+          data-testid="tab-library"
+        >
+          网页库
+        </button>
+        <button
+          type="button"
           className={`tab ${activeTab === 'sites' ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('sites')}
         >
@@ -407,6 +416,41 @@ function App() {
           onUpdateKeyword={handleUpdateKeyword}
           onDeleteKeyword={handleDeleteKeyword}
           onToggleKeyword={handleToggleKeyword}
+        />
+      </div>
+
+      <div className={activeTab === 'library' ? 'block' : 'hidden'}>
+        <LibraryPanel
+          onOpenPage={async (record) => {
+            try {
+              const response = await browser.runtime.sendMessage({
+                action: 'libraryOpenPage',
+                url: record.canonicalUrl || record.sourceUrl,
+                pageKey: record.pageKey,
+                siteKey: record.siteKey,
+              });
+              if (response.success) {
+                setActiveLibraryRecord(record);
+              } else {
+                setError(response.error || '打开页面失败');
+              }
+            } catch (err) {
+              setError(err instanceof Error ? err.message : '打开页面失败');
+            }
+          }}
+          onStatusChange={async (record, newStatus) => {
+            try {
+              await browser.runtime.sendMessage({
+                action: 'libraryStatusUpdate',
+                pageKey: record.pageKey,
+                siteKey: record.siteKey,
+                status: newStatus,
+                version: record.version,
+              });
+            } catch (err) {
+              setError(err instanceof Error ? err.message : '更新状态失败');
+            }
+          }}
         />
       </div>
 

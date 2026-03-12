@@ -371,7 +371,7 @@ Wave 2: sync, UI, and workflow integration
 
   **Commit**: YES | Message: `feat(sync): add local snapshot and persistent status queue` | Files: [`entrypoints/background.ts`, local storage helpers, shared sync types]
 
-- [ ] 7. Add the sidepanel library tab and page-list UI
+- [x] 7. Add the sidepanel library tab and page-list UI
 
   **What to do**: Add a new library-focused tab to the sidepanel with page rows loaded from the local snapshot/gateway. Include site grouping or filter, status badge, sync-state indicator, refresh action, empty state, loading state, unconfigured state, and per-row open/status action affordances.
   **Must NOT do**: Must NOT remove or redesign the existing comment/sites/settings tabs. Must NOT hide datasource errors. Must NOT make the library tab depend on current-page extraction to render.

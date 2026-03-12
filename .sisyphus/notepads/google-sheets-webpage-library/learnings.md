@@ -151,3 +151,30 @@
 - Chrome and Firefox builds succeed
 - Periodic sync scheduled on background startup
 - Version conflicts detected and reported
+
+## [2026-03-12] Task 7: Sidepanel Library Tab and Page-List UI
+
+### Implementation Approach
+- Created LibraryPanel component with full library UI
+- Added library tab to App.tsx tab navigation
+- Bootstrap loads cached snapshot on mount
+- Refresh button triggers libraryRefresh message
+- Site filter badges for grouping by siteKey
+- Status badges: done (green), invalid (red), pending (yellow)
+- Sync state badges: synced, pending, retrying, error
+- Per-row actions: open, mark done, mark invalid
+
+### Key Design Decisions
+- Unconfigured state shows info alert directing to settings
+- Loading state shows spinner
+- Empty state shows info message
+- Site filter shows count per site
+- All row actions have data-testid for QA
+- onOpenPage and onStatusChange callbacks passed from App.tsx
+- Library tab positioned between comment and sites tabs
+
+### Verification Results
+- `pnpm compile` passes
+- Chrome build succeeds
+- LibraryPanel exported from components index
+- Tab navigation includes library tab with data-testid="tab-library"
