@@ -1,0 +1,40 @@
+# Learnings
+
+## [2026-03-12T03:54:11.241Z] Session Start: ses_31fd1c8c4ffe0Ef3jA2zJGWpcu
+
+### Codebase Patterns Observed
+
+- **Type barrel export**: `src/types/index.ts` re-exports all shared types
+- **Storage bootstrap pattern**: `entrypoints/sidepanel/App.tsx:42` shows legacy migration from `keywords` to `sites`
+- **Persist helper pattern**: `entrypoints/sidepanel/App.tsx:105` shows optimistic local update + storage.local.set
+- **Existing entity shape**: `SiteItem` in `src/types/site.ts:3` contains id, name, keywords array
+- **Tab navigation**: `entrypoints/sidepanel/App.tsx:313` uses tabs-boxed with activeTab state
+- **Service layer pattern**: LLM services are abstracted in `src/services/llm/`
+
+### Critical Constraints
+
+- Must NOT repurpose `SiteItem` for library pages
+- Must NOT persist full article content in library storage
+- Must keep library workflow separate from existing comment/sites/settings tabs
+- Chrome-first for Google Sheets; Firefox must not regress
+
+## [2026-03-12T03:54:11.241Z] Task 1: Library Domain Model
+
+### Implementation Approach
+- Created `src/types/library.ts` with all required types for Google Sheets library feature
+- Used `for...of` loop instead of `forEach` to avoid LSP error about callback return values
+- Removed all comments to keep code self-documenting per project standards
+- Added library types to barrel export in `src/types/index.ts`
+- Extended App.tsx bootstrap to load datasourceConfig and librarySnapshot from storage
+
+### Key Design Decisions
+- `pageKey`: normalized URL without fragment and tracking params (utm_*, fbclid, gclid, ref, source)
+- `siteKey`: lowercase hostname from URL
+- PageRecord explicitly excludes full article content (title only, no body/content fields)
+- Library state is separate from existing SiteItem/KeywordItem model
+- Storage bootstrap is non-destructive: existing sites/keywords logic untouched
+
+### Verification Results
+- `pnpm compile` passes with zero TypeScript errors
+- LSP diagnostics clean on all modified files
+- Existing storage migration logic preserved

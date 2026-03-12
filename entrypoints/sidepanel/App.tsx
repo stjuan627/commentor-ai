@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 import { createLLMService } from '../../src/services/llm';
-import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem, SiteItem } from '../../src/types';
+import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem, SiteItem, DatasourceConfig, LibrarySnapshot } from '../../src/types';
 import { SiteKeywordSelector, SiteManager, CommentOutput, SettingsPanel } from './components';
 
 function App() {
@@ -12,6 +12,8 @@ function App() {
   const [isGeneratingComment, setIsGeneratingComment] = useState(false);
   const [sites, setSites] = useState<SiteItem[]>([]);
   const [activeTab, setActiveTab] = useState<'comment' | 'sites' | 'settings'>('comment');
+  const [datasourceConfig, setDatasourceConfig] = useState<DatasourceConfig | null>(null);
+  const [librarySnapshot, setLibrarySnapshot] = useState<LibrarySnapshot | null>(null);
 
   const hasValidProviderConfig = (settings: LLMSettings | null) => {
     if (!settings?.provider) {
@@ -61,6 +63,17 @@ function App() {
     }).catch(err => {
       console.error('Error loading sites:', err);
       setError('加载站点失败');
+    });
+
+    browser.storage.local.get(['datasourceConfig', 'librarySnapshot']).then((result: { datasourceConfig?: DatasourceConfig; librarySnapshot?: LibrarySnapshot }) => {
+      if (result.datasourceConfig) {
+        setDatasourceConfig(result.datasourceConfig);
+      }
+      if (result.librarySnapshot) {
+        setLibrarySnapshot(result.librarySnapshot);
+      }
+    }).catch(err => {
+      console.error('Error loading library state:', err);
     });
 
     const refreshLlmSettings = () => {
