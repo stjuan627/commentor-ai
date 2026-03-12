@@ -15,6 +15,7 @@ function App() {
   const [datasourceConfig, setDatasourceConfig] = useState<DatasourceConfig | null>(null);
   const [librarySnapshot, setLibrarySnapshot] = useState<LibrarySnapshot | null>(null);
   const [activeLibraryRecord, setActiveLibraryRecord] = useState<PageRecord | null>(null);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
 
   const hasValidProviderConfig = (settings: LLMSettings | null) => {
     if (!settings?.provider) {
@@ -367,6 +368,26 @@ function App() {
       )}
 
       <div className={activeTab === 'comment' ? 'block' : 'hidden'}>
+          {activeLibraryRecord && (
+            <div className="card bg-base-200 mb-4" data-testid="active-library-record">
+              <div className="card-body p-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm font-semibold">{activeLibraryRecord.title || activeLibraryRecord.canonicalUrl}</p>
+                    <p className="text-xs text-base-content/70">{activeLibraryRecord.siteKey}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-ghost"
+                    onClick={() => setActiveLibraryRecord(null)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <SiteKeywordSelector
             sites={sites}
             onToggle={handleToggleKeyword}
@@ -420,8 +441,21 @@ function App() {
       </div>
 
       <div className={activeTab === 'library' ? 'block' : 'hidden'}>
+        {libraryError && (
+          <div className="alert alert-error mb-4" data-testid="library-open-error">
+            <span>{libraryError}</span>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => setLibraryError(null)}
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <LibraryPanel
           onOpenPage={async (record) => {
+            setLibraryError(null);
             try {
               const response = await browser.runtime.sendMessage({
                 action: 'libraryOpenPage',
@@ -431,14 +465,16 @@ function App() {
               });
               if (response.success) {
                 setActiveLibraryRecord(record);
+                setActiveTab('comment');
               } else {
-                setError(response.error || '打开页面失败');
+                setLibraryError(response.error || '打开页面失败');
               }
             } catch (err) {
-              setError(err instanceof Error ? err.message : '打开页面失败');
+              setLibraryError(err instanceof Error ? err.message : '打开页面失败');
             }
           }}
           onStatusChange={async (record, newStatus) => {
+            setLibraryError(null);
             try {
               await browser.runtime.sendMessage({
                 action: 'libraryStatusUpdate',
@@ -448,7 +484,7 @@ function App() {
                 version: record.version,
               });
             } catch (err) {
-              setError(err instanceof Error ? err.message : '更新状态失败');
+              setLibraryError(err instanceof Error ? err.message : '更新状态失败');
             }
           }}
         />

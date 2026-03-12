@@ -412,7 +412,7 @@ Wave 2: sync, UI, and workflow integration
 
   **Commit**: YES | Message: `feat(sidepanel): add webpage library tab and list UI` | Files: [`entrypoints/sidepanel/App.tsx`, new/updated sidepanel components]
 
-- [ ] 8. Implement open-page workflow and active library-record binding
+- [x] 8. Implement open-page workflow and active library-record binding
 
   **What to do**: From the library tab, open a selected row in a browser tab through background, then bind the actual opened page back to the matching `PageRecord` in the sidepanel. Confirm the actual URL after load before treating the row as active, and surface mismatch/dead-link errors cleanly.
   **Must NOT do**: Must NOT mark the page remotely as done or opened at click time. Must NOT assume the originally requested URL equals the final resolved URL. Must NOT couple this workflow to comment generation success.

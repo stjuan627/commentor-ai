@@ -178,3 +178,27 @@
 - Chrome build succeeds
 - LibraryPanel exported from components index
 - Tab navigation includes library tab with data-testid="tab-library"
+
+## [2026-03-12] Task 8: Open-Page Workflow and Active Library-Record Binding
+
+### Implementation Approach
+- Added active library record display in comment tab
+- Shows title, siteKey, and close button
+- onOpenPage callback switches to comment tab after opening
+- libraryOpenPage message creates tab and stores active context
+- Error handling with dedicated libraryError state
+- Error alert shown in library tab with data-testid="library-open-error"
+
+### Key Design Decisions
+- Active record displayed as card above keyword selector
+- Opening page automatically switches to comment tab
+- Active record can be dismissed with close button
+- Errors shown in library tab, not global error state
+- Tab creation handled by background via browser.tabs.create
+- Active context stored in browser.storage.local for persistence
+
+### Verification Results
+- `pnpm compile` passes
+- Chrome build succeeds
+- Active record card has data-testid="active-library-record"
+- Error alert has data-testid="library-open-error"
