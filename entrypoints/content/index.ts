@@ -1,8 +1,10 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { Readability } from '@mozilla/readability';
+import { scanFormFields, focusAndFillField } from './formDetector';
 
 export default defineContentScript({
   matches: ['<all_urls>'], // 匹配所有网页
+  allFrames: true,         // 注入到所有 frame（包括 iframe）
   main() {
     console.log('Content extractor script loaded');
 
@@ -105,6 +107,21 @@ export default defineContentScript({
         const result = getPageLanguage();
         console.log('Language result:', result);
         sendResponse(result);
+      }
+
+      // 扫描表单字段
+      if (message.action === 'scanFormFields') {
+        console.log('Scanning form fields...');
+        const fields = scanFormFields();
+        console.log('Form fields found:', fields.length);
+        sendResponse({ success: true, fields });
+      }
+
+      // 聚焦并填入字段
+      if (message.action === 'focusAndFillField') {
+        console.log('Focusing and filling field:', message.selector);
+        const success = focusAndFillField(message.selector, message.text);
+        sendResponse({ success });
       }
       
       return true; // 保持消息通道开放，以便异步响应

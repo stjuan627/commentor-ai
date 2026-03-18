@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 import { createLLMService } from '../../src/services/llm';
-import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem, SiteItem } from '../../src/types';
-import { SiteKeywordSelector, SiteManager, CommentOutput, SettingsPanel } from './components';
+import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem, SiteItem, FormField } from '../../src/types';
+import { SiteKeywordSelector, SiteManager, CommentOutput, SettingsPanel, FormFieldList } from './components';
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
@@ -12,6 +12,8 @@ function App() {
   const [isGeneratingComment, setIsGeneratingComment] = useState(false);
   const [sites, setSites] = useState<SiteItem[]>([]);
   const [activeTab, setActiveTab] = useState<'comment' | 'sites' | 'settings'>('comment');
+  const [formFields, setFormFields] = useState<FormField[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
 
   const hasValidProviderConfig = (settings: LLMSettings | null) => {
     if (!settings?.provider) {
@@ -310,6 +312,47 @@ function App() {
     }
   };
 
+  const handleScanFields = async () => {
+    setIsScanning(true);
+    setFormFields([]);
+    try {
+      const response = await browser.runtime.sendMessage({ action: 'scanFormFields' });
+      if (response?.success) {
+        setFormFields(response.fields || []);
+      } else {
+        setError(response?.error || '扫描表单字段失败');
+      }
+    } catch (err) {
+      console.error('Error scanning form fields:', err);
+      setError('扫描表单字段失败');
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleFillField = async (field: FormField) => {
+    // 默认使用第一条评论
+    const text = generatedComments?.[0];
+    if (!text) {
+      setError('请先生成评论');
+      return;
+    }
+    try {
+      const response = await browser.runtime.sendMessage({
+        action: 'focusAndFillField',
+        selector: field.selector,
+        frameId: field.frameId,
+        text,
+      });
+      if (!response?.success) {
+        setError('填入失败，可能目标元素已不存在');
+      }
+    } catch (err) {
+      console.error('Error filling field:', err);
+      setError('填入表单字段失败');
+    }
+  };
+
   return (
     <div className="w-full h-full bg-base-100 p-4">
       <h1 className="text-3xl uppercase tracking-tight font-bold text-center mb-8">Commentor.AI</h1>
@@ -381,6 +424,13 @@ function App() {
             comments={generatedComments || []}
             keywords={allKeywords}
             onCopy={handleCopy}
+          />
+
+          <FormFieldList
+            fields={formFields}
+            isScanning={isScanning}
+            onScan={handleScanFields}
+            onSelect={handleFillField}
           />
       </div>
 

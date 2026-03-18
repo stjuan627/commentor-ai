@@ -11,6 +11,8 @@ export default defineConfig({
       "activeTab", // Needed by content script communication
       "scripting", // Potentially needed, good to have
       "sidePanel",
+      "debugger", // Needed for CDP accessibility tree queries
+      "webNavigation", // Needed for enumerating frames (iframe support)
     ],
     "options_ui": {
       "page": "options.html",
