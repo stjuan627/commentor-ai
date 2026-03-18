@@ -14,7 +14,7 @@ declare const chrome: { debugger: ChromeDebuggerAPI };
 interface FrameInfo { frameId: number; url: string }
 const _browser = browser as typeof browser & {
   scripting: {
-    executeScript(details: { target: { tabId: number; allFrames?: boolean }; files: string[] }): Promise<unknown>;
+    executeScript(details: { target: { tabId: number; allFrames?: boolean; frameIds?: number[] }; files: string[] }): Promise<unknown>;
   };
   webNavigation: {
     getAllFrames(details: { tabId: number }): Promise<FrameInfo[] | null>;
@@ -238,14 +238,32 @@ export default defineBackground(() => {
                 { frameId: frame.frameId },
               );
               if (response?.success && response.fields) {
-                // 为每个字段标记来源 frameId
                 return (response.fields as FormField[]).map((f: FormField) => ({
                   ...f,
                   frameId: frame.frameId,
                 }));
               }
             } catch {
-              // 某些 frame 可能无法通信（about:blank、跨域限制等），忽略
+              // 内容脚本未注入（动态 iframe 等），尝试注入后重试
+              try {
+                await _browser.scripting.executeScript({
+                  target: { tabId: activeTab.id!, frameIds: [frame.frameId] },
+                  files: ['content-scripts/content.js'],
+                });
+                const retryResponse = await _browser.tabs.sendMessage(
+                  activeTab.id!,
+                  { action: 'scanFormFields' },
+                  { frameId: frame.frameId },
+                );
+                if (retryResponse?.success && retryResponse.fields) {
+                  return (retryResponse.fields as FormField[]).map((f: FormField) => ({
+                    ...f,
+                    frameId: frame.frameId,
+                  }));
+                }
+              } catch {
+                // 注入也失败（跨域 iframe、about:blank 等），忽略
+              }
             }
             return [] as FormField[];
           });

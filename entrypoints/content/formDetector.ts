@@ -29,6 +29,9 @@ function isVisible(el: HTMLElement): boolean {
   if ((el as HTMLInputElement).disabled) return false;
   if ((el as HTMLInputElement).readOnly && !el.isContentEditable) return false;
 
+  // body/html 始终视为可见
+  if (el === document.body || el === document.documentElement) return true;
+
   // offsetParent === null means hidden, except for fixed/sticky elements
   if (el.offsetParent === null) {
     const style = getComputedStyle(el);
@@ -169,6 +172,29 @@ export function scanFormFields(): FormField[] {
   const fields: FormField[] = [];
   let fieldIndex = 0;
 
+  function pushField(el: HTMLElement) {
+    const tag = el.tagName.toUpperCase();
+    const inputType = (el as HTMLInputElement).type?.toLowerCase();
+    const role = el.getAttribute('role') || undefined;
+
+    fields.push({
+      id: `${prefix}-${fieldIndex++}`,
+      tagName: tag,
+      inputType: tag === 'INPUT' ? (inputType || 'text') : undefined,
+      label: resolveLabel(el),
+      placeholder: (el as HTMLInputElement).placeholder || undefined,
+      role,
+      isContentEditable: el.isContentEditable && tag !== 'INPUT' && tag !== 'TEXTAREA',
+      selector: generateSelector(el),
+    });
+  }
+
+  // TreeWalker 不遍历根节点本身，需单独检查 document.body
+  // 覆盖 TinyMCE 等编辑器：iframe 内 body[contenteditable="true"] 就是输入区
+  if (isTargetElement(document.body) && isVisible(document.body)) {
+    pushField(document.body);
+  }
+
   const walker = document.createTreeWalker(
     document.body,
     NodeFilter.SHOW_ELEMENT,
@@ -185,21 +211,7 @@ export function scanFormFields(): FormField[] {
 
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    const el = node as HTMLElement;
-    const tag = el.tagName.toUpperCase();
-    const inputType = (el as HTMLInputElement).type?.toLowerCase();
-    const role = el.getAttribute('role') || undefined;
-
-    fields.push({
-      id: `${prefix}-${fieldIndex++}`,
-      tagName: tag,
-      inputType: tag === 'INPUT' ? (inputType || 'text') : undefined,
-      label: resolveLabel(el),
-      placeholder: (el as HTMLInputElement).placeholder || undefined,
-      role,
-      isContentEditable: el.isContentEditable && tag !== 'INPUT' && tag !== 'TEXTAREA',
-      selector: generateSelector(el),
-    });
+    pushField(node as HTMLElement);
   }
 
   return fields;
