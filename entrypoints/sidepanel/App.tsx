@@ -331,7 +331,6 @@ function App() {
   };
 
   const handleFillField = async (field: FormField) => {
-    // 默认使用第一条评论
     const text = generatedComments?.[0];
     if (!text) {
       setError('请先生成评论');
@@ -350,6 +349,41 @@ function App() {
     } catch (err) {
       console.error('Error filling field:', err);
       setError('填入表单字段失败');
+    }
+  };
+
+  const handleLocateField = async (field: FormField) => {
+    try {
+      await browser.runtime.sendMessage({
+        action: 'focusField',
+        selector: field.selector,
+        frameId: field.frameId,
+      });
+    } catch (err) {
+      console.error('Error locating field:', err);
+    }
+  };
+
+  const handleFillAll = async () => {
+    const text = generatedComments?.[0];
+    if (!text) {
+      setError('请先生成评论');
+      return;
+    }
+    let filled = 0;
+    for (const field of formFields) {
+      try {
+        const response = await browser.runtime.sendMessage({
+          action: 'focusAndFillField',
+          selector: field.selector,
+          frameId: field.frameId,
+          text,
+        });
+        if (response?.success) filled++;
+      } catch { /* skip failed fields */ }
+    }
+    if (filled === 0) {
+      setError('所有字段填入失败');
     }
   };
 
@@ -429,8 +463,11 @@ function App() {
           <FormFieldList
             fields={formFields}
             isScanning={isScanning}
+            hasComment={!!generatedComments && generatedComments.length > 0}
             onScan={handleScanFields}
-            onSelect={handleFillField}
+            onLocate={handleLocateField}
+            onFill={handleFillField}
+            onFillAll={handleFillAll}
           />
       </div>
 

@@ -322,6 +322,36 @@ export default defineBackground(() => {
       return true;
     }
 
+    if (message.action === 'focusField') {
+      (async () => {
+        try {
+          const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+          if (!tabs?.[0]?.id) { sendResponse({ success: false }); return; }
+          const tabId = tabs[0].id;
+
+          if (message.frameId != null) {
+            const response = await _browser.tabs.sendMessage(
+              tabId,
+              { action: 'focusField', selector: message.selector },
+              { frameId: message.frameId },
+            );
+            sendResponse(response);
+          } else {
+            const response = await browser.tabs.sendMessage(
+              tabId,
+              { action: 'focusField', selector: message.selector },
+            );
+            sendResponse(response);
+          }
+        } catch (error: unknown) {
+          console.error('Error focusing field:', error);
+          sendResponse({ success: false });
+        }
+      })();
+
+      return true;
+    }
+
     return true; // 保持消息通道开放，以便异步响应
   });
 

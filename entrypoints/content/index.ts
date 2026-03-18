@@ -1,6 +1,6 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { Readability } from '@mozilla/readability';
-import { scanFormFields, focusAndFillField } from './formDetector';
+import { scanFormFields, focusAndFillField, focusField } from './formDetector';
 
 export default defineContentScript({
   matches: ['<all_urls>'], // 匹配所有网页
@@ -121,6 +121,12 @@ export default defineContentScript({
       if (message.action === 'focusAndFillField') {
         console.log('Focusing and filling field:', message.selector);
         const success = focusAndFillField(message.selector, message.text);
+        sendResponse({ success });
+      }
+
+      // 仅定位字段（滚动+高亮，不填入）
+      if (message.action === 'focusField') {
+        const success = focusField(message.selector);
         sendResponse({ success });
       }
       

@@ -3,8 +3,11 @@ import type { FormField } from '../../../src/types';
 interface FormFieldListProps {
   fields: FormField[];
   isScanning: boolean;
+  hasComment: boolean;
   onScan: () => void;
-  onSelect: (field: FormField) => void;
+  onLocate: (field: FormField) => void;
+  onFill: (field: FormField) => void;
+  onFillAll: () => void;
 }
 
 function getTypeBadge(field: FormField): { text: string; className: string } {
@@ -34,24 +37,35 @@ function getTypeBadge(field: FormField): { text: string; className: string } {
   }
 }
 
-export function FormFieldList({ fields, isScanning, onScan, onSelect }: FormFieldListProps) {
+export function FormFieldList({ fields, isScanning, hasComment, onScan, onLocate, onFill, onFillAll }: FormFieldListProps) {
   return (
     <div className="mt-4">
-      <button
-        type="button"
-        className="btn btn-outline btn-sm w-full mb-3"
-        onClick={onScan}
-        disabled={isScanning}
-      >
-        {isScanning ? (
-          <>
-            <span className="loading loading-spinner loading-xs"></span>
-            扫描中...
-          </>
-        ) : (
-          '扫描输入框'
+      <div className="flex gap-2 mb-3">
+        <button
+          type="button"
+          className="btn btn-outline btn-sm flex-1"
+          onClick={onScan}
+          disabled={isScanning}
+        >
+          {isScanning ? (
+            <>
+              <span className="loading loading-spinner loading-xs"></span>
+              扫描中...
+            </>
+          ) : (
+            '扫描输入框'
+          )}
+        </button>
+        {fields.length > 0 && hasComment && (
+          <button
+            type="button"
+            className="btn btn-warning btn-sm"
+            onClick={onFillAll}
+          >
+            一键填写
+          </button>
         )}
-      </button>
+      </div>
 
       {!isScanning && fields.length === 0 && (
         <div className="text-sm text-base-content/50 text-center py-2">
@@ -81,11 +95,21 @@ export function FormFieldList({ fields, isScanning, onScan, onSelect }: FormFiel
                 </div>
                 <button
                   type="button"
-                  className="btn btn-xs btn-warning shrink-0"
-                  onClick={() => onSelect(field)}
+                  className="btn btn-xs btn-ghost shrink-0"
+                  onClick={() => onLocate(field)}
+                  title="定位到此字段"
                 >
-                  填入
+                  定位
                 </button>
+                {hasComment && (
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-warning shrink-0"
+                    onClick={() => onFill(field)}
+                  >
+                    填入
+                  </button>
+                )}
               </div>
             );
           })}

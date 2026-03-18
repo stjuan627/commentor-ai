@@ -242,3 +242,18 @@ export function focusAndFillField(selector: string, text: string): boolean {
 
   return false;
 }
+
+export function focusField(selector: string): boolean {
+  const el = document.querySelector<HTMLElement>(selector);
+  if (!el) return false;
+
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.focus();
+
+  // 短暂高亮提示
+  const prev = el.style.outline;
+  el.style.outline = '2px solid #f59e0b';
+  setTimeout(() => { el.style.outline = prev; }, 1500);
+
+  return true;
+}
