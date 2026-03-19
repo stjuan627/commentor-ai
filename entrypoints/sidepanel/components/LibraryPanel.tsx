@@ -12,6 +12,7 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
   const [error, setError] = useState<string | null>(null);
   const [selectedSite, setSelectedSite] = useState<string | null>(null);
   const [unconfigured, setUnconfigured] = useState(false);
+  const [pendingStatusUpdates, setPendingStatusUpdates] = useState<Record<string, PageStatus>>({});
 
   const loadLibrary = async () => {
     setLoading(true);
@@ -92,6 +93,9 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
 
   const handleStatusChange = async (record: PageRecord, newStatus: PageStatus) => {
     const optimisticUpdatedAt = new Date().toISOString();
+    const recordKey = `${record.siteKey}-${record.pageKey}`;
+
+    setPendingStatusUpdates((prev) => ({ ...prev, [recordKey]: newStatus }));
 
     if (snapshot) {
       const updatedRecords = snapshot.records.map(r =>
@@ -128,6 +132,12 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
         setSnapshot({ ...snapshot, records: revertedRecords });
       }
       setError(err instanceof Error ? err.message : '更新状态失败');
+    } finally {
+      setPendingStatusUpdates((prev) => {
+        const next = { ...prev };
+        delete next[recordKey];
+        return next;
+      });
     }
   };
 
@@ -201,66 +211,89 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
         {filteredRecords.map(record => (
           <div key={`${record.siteKey}-${record.pageKey}`} className="card bg-base-200">
             <div className="card-body p-4">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h3 className="font-semibold">{record.title || record.canonicalUrl}</h3>
-                  <p className="text-sm text-base-content/70">{record.siteKey}</p>
-                </div>
-                <div className="flex gap-2 items-center">
-                  <span className={`badge ${
-                    record.status === 'done' ? 'badge-success' :
-                    record.status === 'invalid' ? 'badge-error' :
-                    'badge-warning'
-                  }`}>
-                    {record.status === 'done' ? '已完成' :
-                     record.status === 'invalid' ? '无效' :
-                     '待处理'}
-                  </span>
-                  {record.syncState && (
-                    <span className={`badge badge-sm ${
-                      record.syncState === 'synced' ? 'badge-success' :
-                      record.syncState === 'pending' ? 'badge-warning' :
-                      record.syncState === 'retrying' ? 'badge-warning' :
-                      'badge-error'
-                    }`} data-testid="sync-state">
-                      {record.syncState === 'synced' ? '已同步' :
-                       record.syncState === 'pending' ? '待同步' :
-                       record.syncState === 'retrying' ? '重试中' :
-                       '同步失败'}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-2 mt-2">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  onClick={() => onOpenPage(record)}
-                  data-testid={`library-open-row-${record.pageKey}-${record.siteKey}`}
-                >
-                  打开
-                </button>
-                {record.status !== 'done' && (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-success"
-                    onClick={() => handleStatusChange(record, 'done')}
-                    data-testid="status-done"
-                  >
-                    标记完成
-                  </button>
-                )}
-                {record.status !== 'invalid' && (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-error"
-                    onClick={() => handleStatusChange(record, 'invalid')}
-                    data-testid="status-invalid"
-                  >
-                    标记无效
-                  </button>
-                )}
-              </div>
+              {(() => {
+                const recordKey = `${record.siteKey}-${record.pageKey}`;
+                const pendingAction = pendingStatusUpdates[recordKey];
+                const isPending = !!pendingAction;
+
+                return (
+                  <>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{record.title || record.canonicalUrl}</h3>
+                        <p className="text-sm text-base-content/70">{record.siteKey}</p>
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <span className={`badge ${
+                          record.status === 'done' ? 'badge-success' :
+                          record.status === 'invalid' ? 'badge-error' :
+                          'badge-warning'
+                        }`}>
+                          {record.status === 'done' ? '已完成' :
+                           record.status === 'invalid' ? '无效' :
+                           '待处理'}
+                        </span>
+                        {record.syncState && (
+                          <span className={`badge badge-sm ${
+                            record.syncState === 'synced' ? 'badge-success' :
+                            record.syncState === 'pending' ? 'badge-warning' :
+                            record.syncState === 'retrying' ? 'badge-warning' :
+                            'badge-error'
+                          }`} data-testid="sync-state">
+                            {record.syncState === 'synced' ? '已同步' :
+                             record.syncState === 'pending' ? '待同步' :
+                             record.syncState === 'retrying' ? '重试中' :
+                             '同步失败'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => onOpenPage(record)}
+                        disabled={isPending}
+                        data-testid={`library-open-row-${record.pageKey}-${record.siteKey}`}
+                      >
+                        打开
+                      </button>
+                      {record.status !== 'done' && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-success"
+                          onClick={() => handleStatusChange(record, 'done')}
+                          disabled={isPending}
+                          data-testid="status-done"
+                        >
+                          {pendingAction === 'done' ? (
+                            <>
+                              <span className="loading loading-spinner loading-xs"></span>
+                              同步中...
+                            </>
+                          ) : '标记完成'}
+                        </button>
+                      )}
+                      {record.status !== 'invalid' && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-error"
+                          onClick={() => handleStatusChange(record, 'invalid')}
+                          disabled={isPending}
+                          data-testid="status-invalid"
+                        >
+                          {pendingAction === 'invalid' ? (
+                            <>
+                              <span className="loading loading-spinner loading-xs"></span>
+                              同步中...
+                            </>
+                          ) : '标记无效'}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         ))}
