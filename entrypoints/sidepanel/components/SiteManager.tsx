@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import type { KeywordItem, SiteItem } from '../../../src/types';
+import type { KeywordItem, Product } from '../../../src/types';
 
 interface SiteManagerProps {
-  sites: SiteItem[];
+  sites: Product[];
   onAddSite: (name: string) => void;
   onUpdateSite: (siteId: string, name: string) => void;
   onDeleteSite: (siteId: string) => void;
@@ -56,7 +56,7 @@ export function SiteManager({
     setNewSiteName('');
   };
 
-  const handleStartEditSite = (site: SiteItem) => {
+  const handleStartEditSite = (site: Product) => {
     setEditingSiteId(site.id);
     setSiteNameDraft(site.name);
   };
@@ -113,18 +113,18 @@ export function SiteManager({
   return (
     <div className="card bg-base-200 mb-4">
       <div className="card-body p-4">
-        <h2 className="card-title text-lg mb-3">站点管理</h2>
+        <h2 className="card-title text-lg mb-3">产品管理</h2>
 
         <div className="flex flex-wrap gap-2 mb-4">
           <input
             type="text"
             className="input input-bordered input-sm flex-1 min-w-[180px]"
-            placeholder="新增站点名称"
+            placeholder="新增产品名称"
             value={newSiteName}
             onChange={(event) => setNewSiteName(event.target.value)}
           />
           <button type="button" className="btn btn-sm btn-warning" onClick={handleAddSite}>
-            添加站点
+            添加产品
           </button>
         </div>
 
@@ -158,7 +158,7 @@ export function SiteManager({
                         type="button"
                         className="btn btn-xs btn-circle btn-ghost"
                         onClick={() => handleStartEditSite(site)}
-                        title="编辑站点"
+                         title="编辑产品"
                       >
                         ✎
                       </button>
@@ -166,7 +166,7 @@ export function SiteManager({
                         type="button"
                         className="btn btn-xs btn-circle btn-ghost"
                         onClick={() => onDeleteSite(site.id)}
-                        title="删除站点"
+                         title="删除产品"
                       >
                         ×
                       </button>
@@ -276,14 +276,14 @@ export function SiteManager({
                     </table>
                   </div>
                 ) : (
-                  <p className="text-sm text-base-content/60">该站点暂无关键词</p>
+                   <p className="text-sm text-base-content/60">该产品暂无关键词</p>
                 )}
               </div>
             );
           })}
         </div>
 
-        {sites.length === 0 && <p className="text-sm text-base-content/60">暂无站点，请先添加</p>}
+         {sites.length === 0 && <p className="text-sm text-base-content/60">暂无产品，请先添加</p>}
       </div>
     </div>
   );

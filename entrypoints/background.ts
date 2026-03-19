@@ -1,25 +1,33 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import * as authService from '../src/services/auth';
-import * as sheetsService from '../src/services/sheets';
-import { schedulePeriodicSync } from '../src/services/sync';
-import type { DatasourceConfig, LibrarySnapshot } from '../src/types';
+import { getProducts, setActiveProductId } from '../src/services/products';
+import {
+  createLocalStatusRecord,
+  getProductStatuses,
+  getWebPageSnapshot,
+  mergeProductStatuses,
+  saveProductStatuses,
+  saveWebPageSnapshot,
+} from '../src/services/productMatrix';
+import { fetchProductStatuses, fetchWebPages } from '../src/services/sheets';
+import { flushSyncQueue, schedulePeriodicSync } from '../src/services/sync';
+import type {
+  DatasourceConfig,
+  ProductLibrarySnapshot,
+  ProductSyncQueueItem,
+  WebPageRecord,
+} from '../src/types';
 
 export default defineBackground(() => {
   console.log('Commentor.ai background service started', { id: browser.runtime.id });
 
-  schedulePeriodicSync();
+  void schedulePeriodicSync();
 
-  // 检查内容脚本是否已注入
   async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
     try {
-      // 尝试发送测试消息检查内容脚本是否已加载
-      await browser.tabs.sendMessage(tabId, { action: 'ping' })
-        .catch(async () => {
-          // 如果发送消息失败，说明内容脚本未加载
-          console.log('Content script not loaded, but we will try to extract content anyway');
-          // 注意：在WXT中，内容脚本应该已经自动注入
-          // 我们不需要手动注入，因为它已经在manifest中配置
-        });
+      await browser.tabs.sendMessage(tabId, { action: 'ping' }).catch(async () => {
+        console.log('Content script not loaded, but we will try to extract content anyway');
+      });
       return true;
     } catch (error: unknown) {
       console.error('Failed to check content script:', error);
@@ -27,106 +35,89 @@ export default defineBackground(() => {
     }
   }
 
-  // 监听来自 popup 或侧边栏的消息
-  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  async function getCurrentTabId(): Promise<number> {
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (!tabs || tabs.length === 0 || !tabs[0].id) {
+      throw new Error('No active tab found');
+    }
+
+    return tabs[0].id;
+  }
+
+  async function buildProductLibraryPayload(): Promise<{
+    snapshot: ProductLibrarySnapshot;
+    activeProductId: string | null;
+    activeContext: unknown;
+  }> {
+    const [products, webPages, statuses, contextResult, activeProductResult] = await Promise.all([
+      getProducts(),
+      getWebPageSnapshot(),
+      getProductStatuses(),
+      browser.storage.local.get('activeProductContext'),
+      browser.storage.local.get('activeProductId'),
+    ]);
+
+    let activeProductId = activeProductResult.activeProductId ?? null;
+    if (!activeProductId && products.length > 0) {
+      activeProductId = products[0].id;
+      await setActiveProductId(activeProductId);
+    }
+
+    return {
+      snapshot: {
+        products,
+        webPages,
+        statuses,
+        fetchedAt: webPages?.fetchedAt ?? new Date().toISOString(),
+      },
+      activeProductId,
+      activeContext: contextResult.activeProductContext ?? null,
+    };
+  }
+
+  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.action === 'openOptionsPage') {
-      // 打开选项页面
-      console.log('Opening options page');
-      // 使用 window.open 来打开选项页面
-      // 在 WXT 中，我们可以使用简单的方式来处理
-      // 向 sidepanel 发送消息，让它自己打开选项页面
       sendResponse({ success: true, action: 'openOptionsInSidepanel' });
       return true;
     }
-    
+
     if (message.action === 'getPageLanguage') {
-      // 使用立即执行函数处理异步操作
       (async () => {
         try {
-          // 获取当前活动标签页
-          const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-          if (!tabs || tabs.length === 0) {
-            sendResponse({ success: false, error: 'No active tab found' });
-            return;
-          }
-
-          const activeTab = tabs[0];
-          if (!activeTab.id) {
-            sendResponse({ success: false, error: 'Tab ID is undefined' });
-            return;
-          }
-          
-          // 确保内容脚本已注入
-          const isInjected = await ensureContentScriptInjected(activeTab.id);
+          const tabId = await getCurrentTabId();
+          const isInjected = await ensureContentScriptInjected(tabId);
           if (!isInjected) {
             sendResponse({ success: false, error: 'Failed to inject content script' });
             return;
           }
-          
-          // 向 content script 发送消息，请求获取页面语言
-          try {
-            const response = await browser.tabs.sendMessage(activeTab.id, { action: 'getPageLanguage' });
-            // 将语言代码返回给发送者
-            sendResponse(response);
-          } catch (error: unknown) {
-            console.error('Error communicating with content script:', error);
-            sendResponse({ 
-              success: false, 
-              error: 'Failed to communicate with content script: ' + (error instanceof Error ? error.message : 'Unknown error')
-            });
-          }
+
+          const response = await browser.tabs.sendMessage(tabId, { action: 'getPageLanguage' });
+          sendResponse(response);
         } catch (error: unknown) {
-          console.error('Error in background script:', error);
-          sendResponse({ 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          });
+          console.error('Error getting page language:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();
-      
-      return true; // 保持消息通道开放
+      return true;
     }
-    
+
     if (message.action === 'getPageContent') {
       (async () => {
         try {
-          const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-          if (!tabs || tabs.length === 0) {
-            sendResponse({ success: false, error: 'No active tab found' });
-            return;
-          }
-
-          const activeTab = tabs[0];
-          if (!activeTab.id) {
-            sendResponse({ success: false, error: 'Tab ID is undefined' });
-            return;
-          }
-          
-          const isInjected = await ensureContentScriptInjected(activeTab.id);
+          const tabId = await getCurrentTabId();
+          const isInjected = await ensureContentScriptInjected(tabId);
           if (!isInjected) {
             sendResponse({ success: false, error: 'Failed to inject content script' });
             return;
           }
-          
-          try {
-            const response = await browser.tabs.sendMessage(activeTab.id, { action: 'extractContent' });
-            sendResponse(response);
-          } catch (error: unknown) {
-            console.error('Error communicating with content script:', error);
-            sendResponse({ 
-              success: false, 
-              error: 'Failed to communicate with content script: ' + (error instanceof Error ? error.message : 'Unknown error')
-            });
-          }
+
+          const response = await browser.tabs.sendMessage(tabId, { action: 'extractContent' });
+          sendResponse(response);
         } catch (error: unknown) {
-          console.error('Error in background script:', error);
-          sendResponse({ 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          });
+          console.error('Error getting page content:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();
-      
       return true;
     }
 
@@ -139,7 +130,7 @@ export default defineBackground(() => {
             return;
           }
 
-          const token = await authService.acquireToken(true);
+          await authService.acquireToken(true);
           const state = await authService.getAuthState();
           sendResponse({ success: true, state });
         } catch (error: unknown) {
@@ -178,177 +169,202 @@ export default defineBackground(() => {
       return true;
     }
 
-    if (message.action === 'libraryBootstrap') {
+    if (message.action === 'productLibraryBootstrap') {
       (async () => {
         try {
-          const result = await browser.storage.local.get(['datasourceConfig', 'librarySnapshot']);
+          const result = await browser.storage.local.get('datasourceConfig');
           const config: DatasourceConfig | undefined = result.datasourceConfig;
-          const cached: LibrarySnapshot | undefined = result.librarySnapshot;
+          const payload = await buildProductLibraryPayload();
 
           if (!config || !config.connected) {
-            sendResponse({ success: true, snapshot: cached || null, status: 'unconfigured' });
+            sendResponse({ success: true, status: 'unconfigured', ...payload });
             return;
           }
 
-          sendResponse({ success: true, snapshot: cached || null, status: 'ok' });
+          sendResponse({ success: true, status: 'ok', ...payload });
         } catch (error: unknown) {
-          console.error('Library bootstrap failed:', error);
+          console.error('Product library bootstrap failed:', error);
           sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();
       return true;
     }
 
-    if (message.action === 'libraryRefresh') {
+    if (message.action === 'productLibraryRefresh') {
       (async () => {
         try {
           const result = await browser.storage.local.get('datasourceConfig');
           const config: DatasourceConfig | undefined = result.datasourceConfig;
-
           if (!config || !config.connected) {
             sendResponse({ success: false, error: 'Datasource not configured', status: 'unconfigured' });
             return;
           }
 
-          const records = await sheetsService.fetchPageRecords(config);
-          const snapshot: LibrarySnapshot = {
-            records,
+          const products = await getProducts();
+          const webPages = await fetchWebPages(config);
+          const currentStatuses = await getProductStatuses();
+          const remoteStatusesEntries = await Promise.all(
+            products.map(async (product) => [product.id, await fetchProductStatuses(config, product)] as const),
+          );
+          const remoteStatuses = Object.fromEntries(remoteStatusesEntries);
+          const mergedStatuses = mergeProductStatuses(currentStatuses, remoteStatuses);
+          const webPageSnapshot = {
+            records: webPages,
             fetchedAt: new Date().toISOString(),
           };
 
-          await browser.storage.local.set({ librarySnapshot: snapshot });
-          sendResponse({ success: true, snapshot });
+          await saveWebPageSnapshot(webPageSnapshot);
+          await saveProductStatuses(mergedStatuses);
+
+          const payload = await buildProductLibraryPayload();
+          sendResponse({ success: true, ...payload });
         } catch (error: unknown) {
-          console.error('Library refresh failed:', error);
+          console.error('Product library refresh failed:', error);
           sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error', retryable: true });
         }
       })();
       return true;
     }
 
-    if (message.action === 'libraryOpenPage') {
+    if (message.action === 'productTaskOpenPage') {
       (async () => {
         try {
-          const { url, pageKey, siteKey } = message;
-          if (!url) {
-            sendResponse({ success: false, error: 'URL is required' });
+          const { url, productId, pageKey, siteKey } = message;
+          if (!url || !productId || !pageKey || !siteKey) {
+            sendResponse({ success: false, error: 'Missing required fields' });
             return;
           }
 
           const tab = await browser.tabs.create({ url, active: true });
           const activeContext = {
+            productId,
             pageKey,
             siteKey,
             tabId: tab.id,
             boundAt: new Date().toISOString(),
           };
-          await browser.storage.local.set({ activeLibraryContext: activeContext });
+
+          await browser.storage.local.set({
+            activeProductContext: activeContext,
+            activeProductId: productId,
+          });
           sendResponse({ success: true, tabId: tab.id, activeContext });
         } catch (error: unknown) {
-          console.error('Library open page failed:', error);
+          console.error('Product task open page failed:', error);
           sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();
       return true;
     }
 
-    if (message.action === 'libraryStatusUpdate') {
+    if (message.action === 'productTaskUpdate') {
       (async () => {
         try {
-          const { pageKey, siteKey, status, version } = message;
-          const result = await browser.storage.local.get(['datasourceConfig', 'librarySnapshot', 'syncQueue']);
-          const config: DatasourceConfig | undefined = result.datasourceConfig;
-          const snapshot: LibrarySnapshot | undefined = result.librarySnapshot;
-          const queue: any[] = result.syncQueue || [];
-          const nextVersion = version + 1;
-          const updatedAt = new Date().toISOString();
-
-          let updatedRecord = null;
-
-          if (snapshot) {
-            const updatedRecords = snapshot.records.map(r =>
-              r.pageKey === pageKey && r.siteKey === siteKey
-                ? (() => {
-                    updatedRecord = { ...r, status, version: nextVersion, updatedAt, syncState: 'pending' as const };
-                    return updatedRecord;
-                  })()
-                : r
-            );
-            await browser.storage.local.set({ librarySnapshot: { ...snapshot, records: updatedRecords } });
-          }
-
-          const queueItem = {
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            pageKey,
-            siteKey,
-            status,
-            version: nextVersion,
-            enqueuedAt: updatedAt,
-            retryCount: 0,
-            syncState: 'pending' as const,
+          const { productId, pageKey, status, comment } = message as {
+            productId: string;
+            pageKey: string;
+            status: 'pending' | 'done' | 'invalid';
+            comment?: string;
           };
-          queue.push(queueItem);
-          await browser.storage.local.set({ syncQueue: queue });
 
-          if (config && config.connected) {
-            try {
-              await sheetsService.batchUpdateStatus(config, [{ pageKey, status, version: nextVersion }]);
-              const updatedQueue = queue.filter(q => q.id !== queueItem.id);
+          const [products, webPageSnapshot, statuses, queueResult] = await Promise.all([
+            getProducts(),
+            getWebPageSnapshot(),
+            getProductStatuses(),
+            browser.storage.local.get('syncQueue'),
+          ]);
 
-              if (snapshot) {
-                const syncedRecords = snapshot.records.map(r =>
-                  r.pageKey === pageKey && r.siteKey === siteKey
-                    ? { ...r, status, version: nextVersion, updatedAt, syncState: 'synced' as const }
-                    : r
-                );
-                updatedRecord = syncedRecords.find(r => r.pageKey === pageKey && r.siteKey === siteKey) || updatedRecord;
-                await browser.storage.local.set({
-                  syncQueue: updatedQueue,
-                  librarySnapshot: { ...snapshot, records: syncedRecords },
-                });
-              } else {
-                await browser.storage.local.set({ syncQueue: updatedQueue });
-              }
+          const product = products.find((item) => item.id === productId);
+          const page = webPageSnapshot?.records.find((item: WebPageRecord) => item.pageKey === pageKey);
 
-              sendResponse({ success: true, syncState: 'synced', updatedRecord });
-            } catch (syncError: unknown) {
-              console.error('Sync failed, queued for retry:', syncError);
-              sendResponse({ success: true, syncState: 'pending', error: syncError instanceof Error ? syncError.message : 'Sync failed', updatedRecord });
-            }
-          } else {
-            sendResponse({ success: true, syncState: 'pending', updatedRecord });
+          if (!product || !page) {
+            sendResponse({ success: false, error: 'Product or page not found' });
+            return;
           }
+
+          const existing = (statuses[productId] ?? []).find((item) => item.pageKey === pageKey);
+          const nextRecord = createLocalStatusRecord(
+            product,
+            page,
+            status,
+            (existing?.version ?? 0) + 1,
+            comment ?? existing?.comment,
+          );
+          const nextStatuses = { ...statuses, [productId]: [...(statuses[productId] ?? []).filter((item) => item.pageKey !== pageKey), nextRecord] };
+          const queue: ProductSyncQueueItem[] = queueResult.syncQueue || [];
+          const nextQueue = [
+            ...queue.filter((item) => item.id !== nextRecord.id),
+            {
+              id: nextRecord.id,
+              productId,
+              pageKey,
+              siteKey: page.siteKey,
+              status,
+              comment: nextRecord.comment,
+              version: nextRecord.version,
+              enqueuedAt: new Date().toISOString(),
+              retryCount: 0,
+              syncState: 'pending',
+            },
+          ];
+
+          await saveProductStatuses(nextStatuses);
+          await browser.storage.local.set({ syncQueue: nextQueue, activeProductId: productId });
+          await flushSyncQueue();
+
+          const refreshedStatuses = await getProductStatuses();
+          const updatedRecord = (refreshedStatuses[productId] ?? []).find((item) => item.pageKey === pageKey) ?? nextRecord;
+          sendResponse({ success: true, record: updatedRecord });
         } catch (error: unknown) {
-          console.error('Library status update failed:', error);
+          console.error('Product task update failed:', error);
           sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();
       return true;
     }
 
-    if (message.action === 'libraryGetActiveContext') {
+    if (message.action === 'productTaskGetActiveContext') {
       (async () => {
         try {
-          const result = await browser.storage.local.get('activeLibraryContext');
-          sendResponse({ success: true, activeContext: result.activeLibraryContext || null });
+          const result = await browser.storage.local.get(['activeProductContext', 'activeProductId']);
+          sendResponse({
+            success: true,
+            activeContext: result.activeProductContext || null,
+            activeProductId: result.activeProductId || null,
+          });
         } catch (error: unknown) {
-          console.error('Get active context failed:', error);
+          console.error('Get active product context failed:', error);
           sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();
       return true;
     }
-    
+
+    if (message.action === 'productTaskSetActiveProduct') {
+      (async () => {
+        try {
+          await setActiveProductId(message.productId ?? null);
+          sendResponse({ success: true });
+        } catch (error: unknown) {
+          console.error('Set active product failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      })();
+      return true;
+    }
+
     return true;
   });
 
-  // 设置侧边栏行为
   try {
-    // @ts-ignore - 忽略TypeScript错误，因为类型定义可能不完整
-    if (browser.sidePanel) {
-      // @ts-ignore - 忽略TypeScript错误
-      browser.sidePanel.setPanelBehavior({
-        openPanelOnActionClick: true
+    const sidePanelApi = (browser as typeof browser & {
+      sidePanel?: {
+        setPanelBehavior: (options: { openPanelOnActionClick: boolean }) => Promise<void>;
+      };
+    }).sidePanel;
+    if (sidePanelApi) {
+      sidePanelApi.setPanelBehavior({
+        openPanelOnActionClick: true,
       }).catch((error: unknown) => {
         console.error('Error setting side panel behavior:', error);
       });

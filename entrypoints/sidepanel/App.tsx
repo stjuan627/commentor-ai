@@ -1,8 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import './App.css';
 import { createLLMService } from '../../src/services/llm';
-import { LLMSettings, ExtractedContent, ExtractResponse, KeywordItem, SiteItem, DatasourceConfig, LibrarySnapshot, PageRecord } from '../../src/types';
-import { SiteKeywordSelector, SiteManager, CommentOutput, SettingsPanel, LibraryPanel } from './components';
+import { createProductId, saveProducts } from '../../src/services/products';
+import { buildTaskRecords } from '../../src/services/productMatrix';
+import type {
+  ActiveProductContext,
+  DatasourceConfig,
+  ExtractResponse,
+  ExtractedContent,
+  LLMSettings,
+  PageStatus,
+  Product,
+  ProductPageStatusRecord,
+  ProductStatusSnapshot,
+  ProductTaskRecord,
+  WebPageSnapshot,
+} from '../../src/types';
+import { CommentOutput, ProductTaskPanel, SettingsPanel, SiteKeywordSelector, SiteManager } from './components';
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
@@ -10,12 +24,17 @@ function App() {
   const [generatedComments, setGeneratedComments] = useState<string[]>();
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
   const [isGeneratingComment, setIsGeneratingComment] = useState(false);
-  const [sites, setSites] = useState<SiteItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'comment' | 'sites' | 'settings' | 'library'>('comment');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [activeTab, setActiveTab] = useState<'comment' | 'products' | 'settings' | 'tasks'>('comment');
   const [datasourceConfig, setDatasourceConfig] = useState<DatasourceConfig | null>(null);
-  const [librarySnapshot, setLibrarySnapshot] = useState<LibrarySnapshot | null>(null);
-  const [activeLibraryRecord, setActiveLibraryRecord] = useState<PageRecord | null>(null);
-  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [webPageSnapshot, setWebPageSnapshot] = useState<WebPageSnapshot | null>(null);
+  const [productStatuses, setProductStatuses] = useState<ProductStatusSnapshot>({});
+  const [activeProductId, setActiveProductId] = useState<string | null>(null);
+  const [activeProductContext, setActiveProductContext] = useState<ActiveProductContext | null>(null);
+  const [activeTaskRecord, setActiveTaskRecord] = useState<ProductTaskRecord | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
+  const [taskLoading, setTaskLoading] = useState(false);
+  const [taskUnconfigured, setTaskUnconfigured] = useState(false);
 
   const hasValidProviderConfig = (settings: LLMSettings | null) => {
     if (!settings?.provider) {
@@ -33,58 +52,96 @@ function App() {
     return false;
   };
 
-  useEffect(() => {
+  const tasksByProduct = useMemo(() => {
+    const pages = webPageSnapshot?.records ?? [];
+
+    return Object.fromEntries(products.map((product) => [
+      product.id,
+      buildTaskRecords(product, pages, productStatuses[product.id] ?? []),
+    ]));
+  }, [productStatuses, products, webPageSnapshot]);
+
+  const activeProduct = useMemo(
+    () => products.find((product) => product.id === activeProductId) ?? products[0] ?? null,
+    [activeProductId, products],
+  );
+
+  const activeKeywords = activeProduct?.keywords ?? [];
+
+  const refreshLlmSettings = useCallback(() => {
     browser.storage.local.get('llmSettings').then((result: { llmSettings?: LLMSettings }) => {
-      if (result.llmSettings) {
-        setLlmSettings(result.llmSettings);
-      }
-    }).catch(err => {
-      console.error('Error loading LLM settings:', err);
-      setError('加载 LLM 设置失败');
+      setLlmSettings(result.llmSettings ?? null);
+    }).catch((err) => {
+      console.error('Error refreshing LLM settings:', err);
     });
+  }, []);
 
-    browser.storage.local.get(['sites', 'keywords']).then((result: { sites?: SiteItem[]; keywords?: KeywordItem[] }) => {
-      if (Array.isArray(result.sites)) {
-        setSites(result.sites);
-        return;
-      }
+  const deriveActiveTask = useCallback((
+    context: ActiveProductContext | null,
+    nextProducts: Product[],
+    nextWebPageSnapshot: WebPageSnapshot | null,
+    nextStatuses: ProductStatusSnapshot,
+  ) => {
+    if (!context) {
+      return null;
+    }
 
-      if (Array.isArray(result.keywords) && result.keywords.length > 0) {
-        const migratedSites: SiteItem[] = [
-          {
-            id: 'default-site',
-            name: '默认站点',
-            keywords: result.keywords,
-          },
-        ];
-        setSites(migratedSites);
-        browser.storage.local.set({ sites: migratedSites }).catch((err) => {
-          console.error('Error persisting migrated sites:', err);
-        });
-      }
-    }).catch(err => {
-      console.error('Error loading sites:', err);
-      setError('加载站点失败');
-    });
+    const product = nextProducts.find((item) => item.id === context.productId);
+    const page = nextWebPageSnapshot?.records.find((item) => item.pageKey === context.pageKey);
+    if (!product || !page) {
+      return null;
+    }
 
-    browser.storage.local.get(['datasourceConfig', 'librarySnapshot']).then((result: { datasourceConfig?: DatasourceConfig; librarySnapshot?: LibrarySnapshot }) => {
-      if (result.datasourceConfig) {
-        setDatasourceConfig(result.datasourceConfig);
-      }
-      if (result.librarySnapshot) {
-        setLibrarySnapshot(result.librarySnapshot);
-      }
-    }).catch(err => {
-      console.error('Error loading library state:', err);
-    });
+    return buildTaskRecords(product, [page], nextStatuses[product.id] ?? [])[0] ?? null;
+  }, []);
 
-    const refreshLlmSettings = () => {
-      browser.storage.local.get('llmSettings').then((result: { llmSettings?: LLMSettings }) => {
-        setLlmSettings(result.llmSettings ?? null);
-      }).catch(err => {
-        console.error('Error refreshing LLM settings:', err);
+  const loadProductLibrary = useCallback(async (refresh: boolean) => {
+    setTaskLoading(true);
+    setTaskError(null);
+
+    try {
+      const response = await browser.runtime.sendMessage({
+        action: refresh ? 'productLibraryRefresh' : 'productLibraryBootstrap',
       });
-    };
+
+      if (!response.success) {
+        throw new Error(response.error || '加载产品任务失败');
+      }
+
+      const snapshot = response.snapshot as {
+        products: Product[];
+        webPages: WebPageSnapshot | null;
+        statuses: ProductStatusSnapshot;
+      };
+      const nextProducts = snapshot.products || [];
+      const nextWebPageSnapshot = snapshot.webPages || null;
+      const nextStatuses = snapshot.statuses || {};
+      const nextContext = (response.activeContext as ActiveProductContext | null) ?? null;
+
+      setProducts(nextProducts);
+      setWebPageSnapshot(nextWebPageSnapshot);
+      setProductStatuses(nextStatuses);
+      setActiveProductId(response.activeProductId ?? nextProducts[0]?.id ?? null);
+      setActiveProductContext(nextContext);
+      setActiveTaskRecord(deriveActiveTask(nextContext, nextProducts, nextWebPageSnapshot, nextStatuses));
+      setTaskUnconfigured(response.status === 'unconfigured');
+    } catch (err) {
+      setTaskError(err instanceof Error ? err.message : '加载产品任务失败');
+    } finally {
+      setTaskLoading(false);
+    }
+  }, [deriveActiveTask]);
+
+  useEffect(() => {
+    refreshLlmSettings();
+
+    browser.storage.local.get('datasourceConfig').then((result: { datasourceConfig?: DatasourceConfig }) => {
+      setDatasourceConfig(result.datasourceConfig ?? null);
+    }).catch((err) => {
+      console.error('Error loading datasource config:', err);
+    });
+
+    void loadProductLibrary(false);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -99,7 +156,16 @@ function App() {
       window.removeEventListener('focus', refreshLlmSettings);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [loadProductLibrary, refreshLlmSettings]);
+
+  useEffect(() => {
+    setActiveTaskRecord(deriveActiveTask(activeProductContext, products, webPageSnapshot, productStatuses));
+  }, [activeProductContext, deriveActiveTask, productStatuses, products, webPageSnapshot]);
+
+  const persistProducts = async (nextProducts: Product[]) => {
+    setProducts(nextProducts);
+    await saveProducts(nextProducts);
+  };
 
   const getPageLanguage = async (): Promise<string> => {
     try {
@@ -114,15 +180,12 @@ function App() {
     }
   };
 
-  const allKeywords = sites.flatMap((site) => site.keywords);
-  const enabledKeywords = allKeywords.filter((item) => item.enabled);
-
-  const persistSites = async (nextSites: SiteItem[]) => {
-    setSites(nextSites);
-    await browser.storage.local.set({ sites: nextSites });
-  };
-
   const generateComment = async () => {
+    if (!activeProduct) {
+      setError('请先选择一个产品');
+      return;
+    }
+
     if (!llmSettings?.provider) {
       setError('请先在设置页配置 LLM 提供商');
       return;
@@ -158,8 +221,13 @@ function App() {
       return;
     }
 
+    if (!activeProduct) {
+      setError('请先选择一个产品');
+      return;
+    }
+
     if (!llmSettings?.provider) {
-      setError('请先在选项页面设置 LLM 提供商');
+      setError('请先在设置页配置 LLM 提供商');
       return;
     }
 
@@ -167,7 +235,7 @@ function App() {
       (llmSettings.provider === 'openai' && !llmSettings.openai?.apiKey) ||
       (llmSettings.provider === 'gemini' && !llmSettings.gemini?.apiKey)
     ) {
-      setError('请先在选项页面设置 API Key');
+      setError('请先在设置页配置 API Key');
       return;
     }
 
@@ -181,25 +249,25 @@ function App() {
       }
 
       const contentToSend = `# ${content.title}\n\n${content.content}`;
-      const keywordsList = enabledKeywords.map((item) => item.keyword);
+      const keywordsList = activeKeywords.filter((item) => item.enabled).map((item) => item.keyword);
       const comments: string[] = [];
 
       if (langcode && langcode !== 'en' && langcode !== '') {
         const args = {
           content: contentToSend,
           keywords: keywordsList,
-          langcode: langcode
+          langcode,
         };
         const [englishComment, localComment] = await Promise.all([
           llmService.generateComment(contentToSend, llmSettings.promptTemplate, { ...args, langcode: 'en' }),
-          llmService.generateComment(contentToSend, llmSettings.promptTemplate, args)
+          llmService.generateComment(contentToSend, llmSettings.promptTemplate, args),
         ]);
         comments.push(englishComment, localComment);
       } else {
         const comment = await llmService.generateComment(contentToSend, llmSettings.promptTemplate, {
           content: contentToSend,
           keywords: keywordsList,
-          langcode: 'en'
+          langcode: 'en',
         });
         comments.push(comment);
       }
@@ -215,44 +283,64 @@ function App() {
   };
 
   const handleAddSite = async (name: string) => {
-    const nextSites: SiteItem[] = [
-      ...sites,
+    const now = new Date().toISOString();
+    const nextProducts: Product[] = [
+      ...products,
       {
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        id: createProductId(name),
         name,
         keywords: [],
+        createdAt: now,
+        updatedAt: now,
       },
     ];
-    await persistSites(nextSites);
+    await persistProducts(nextProducts);
+    const nextActiveProductId = nextProducts[nextProducts.length - 1]?.id ?? null;
+    setActiveProductId(nextActiveProductId);
+    await browser.runtime.sendMessage({ action: 'productTaskSetActiveProduct', productId: nextActiveProductId });
   };
 
   const handleUpdateSite = async (siteId: string, name: string) => {
-    const nextSites = sites.map((site) => (site.id === siteId ? { ...site, name } : site));
-    await persistSites(nextSites);
+    const nextProducts = products.map((product) => (
+      product.id === siteId
+        ? { ...product, name, updatedAt: new Date().toISOString() }
+        : product
+    ));
+    await persistProducts(nextProducts);
   };
 
   const handleDeleteSite = async (siteId: string) => {
-    const nextSites = sites.filter((site) => site.id !== siteId);
-    await persistSites(nextSites);
+    const nextProducts = products.filter((product) => product.id !== siteId);
+    await persistProducts(nextProducts);
+    if (activeProductId === siteId) {
+      const nextActiveProductId = nextProducts[0]?.id ?? null;
+      setActiveProductId(nextActiveProductId);
+      await browser.runtime.sendMessage({ action: 'productTaskSetActiveProduct', productId: nextActiveProductId });
+    }
   };
 
-  const handleAddKeyword = async (siteId: string, keyword: Omit<KeywordItem, 'enabled'>) => {
-    const nextSites = sites.map((site) => {
-      if (site.id !== siteId) return site;
+  const handleAddKeyword = async (siteId: string, keyword: Omit<Product['keywords'][number], 'enabled'>) => {
+    const nextProducts = products.map((product) => {
+      if (product.id !== siteId) {
+        return product;
+      }
+
       return {
-        ...site,
-        keywords: [...site.keywords, { ...keyword, enabled: true }],
+        ...product,
+        updatedAt: new Date().toISOString(),
+        keywords: [...product.keywords, { ...keyword, enabled: true }],
       };
     });
-    await persistSites(nextSites);
+    await persistProducts(nextProducts);
   };
 
-  const handleUpdateKeyword = async (siteId: string, keywordIndex: number, keyword: Omit<KeywordItem, 'enabled'>) => {
-    const nextSites = sites.map((site) => {
-      if (site.id !== siteId) return site;
-      if (keywordIndex < 0 || keywordIndex >= site.keywords.length) return site;
+  const handleUpdateKeyword = async (siteId: string, keywordIndex: number, keyword: Omit<Product['keywords'][number], 'enabled'>) => {
+    const nextProducts = products.map((product) => {
+      if (product.id !== siteId || keywordIndex < 0 || keywordIndex >= product.keywords.length) {
+        return product;
+      }
 
-      const nextKeywords = [...site.keywords];
+      const nextKeywords = [...product.keywords];
       nextKeywords[keywordIndex] = {
         ...nextKeywords[keywordIndex],
         keyword: keyword.keyword,
@@ -260,69 +348,127 @@ function App() {
       };
 
       return {
-        ...site,
+        ...product,
+        updatedAt: new Date().toISOString(),
         keywords: nextKeywords,
       };
     });
-    await persistSites(nextSites);
+
+    await persistProducts(nextProducts);
   };
 
   const handleDeleteKeyword = async (siteId: string, keywordIndex: number) => {
-    const nextSites = sites.map((site) => {
-      if (site.id !== siteId) return site;
+    const nextProducts = products.map((product) => {
+      if (product.id !== siteId) {
+        return product;
+      }
+
       return {
-        ...site,
-        keywords: site.keywords.filter((_, index) => index !== keywordIndex),
+        ...product,
+        updatedAt: new Date().toISOString(),
+        keywords: product.keywords.filter((_, index) => index !== keywordIndex),
       };
     });
-    await persistSites(nextSites);
+
+    await persistProducts(nextProducts);
   };
 
   const handleToggleKeyword = async (siteId: string, keywordIndex: number) => {
-    const nextSites = sites.map((site) => {
-      if (site.id !== siteId) return site;
-      if (keywordIndex < 0 || keywordIndex >= site.keywords.length) return site;
+    const nextProducts = products.map((product) => {
+      if (product.id !== siteId || keywordIndex < 0 || keywordIndex >= product.keywords.length) {
+        return product;
+      }
 
-      const nextKeywords = [...site.keywords];
+      const nextKeywords = [...product.keywords];
       nextKeywords[keywordIndex] = {
         ...nextKeywords[keywordIndex],
         enabled: !nextKeywords[keywordIndex].enabled,
       };
 
       return {
-        ...site,
+        ...product,
+        updatedAt: new Date().toISOString(),
         keywords: nextKeywords,
       };
     });
 
-    await persistSites(nextSites);
+    await persistProducts(nextProducts);
   };
 
   const handleCopy = (comment: string, format: 'txt' | 'html' | 'markdown' | 'bbcode') => {
     if (format === 'txt') {
-      navigator.clipboard.writeText(comment).catch(err => {
+      navigator.clipboard.writeText(comment).catch((err) => {
         setError('复制到剪贴板失败: ' + err.message);
       });
-    } else {
-      let result = comment;
-      const sortedKeywords = [...enabledKeywords]
-        .sort((a, b) => b.keyword.length - a.keyword.length);
+      return;
+    }
 
-      for (const { keyword, url } of sortedKeywords) {
-        const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-        if (format === 'html') {
-          result = result.replace(regex, `<a href="${url}">${keyword}</a>`);
-        } else if (format === 'markdown') {
-          result = result.replace(regex, `[${keyword}](${url})`);
-        } else if (format === 'bbcode') {
-          result = result.replace(regex, `[url=${url}]${keyword}[/url]`);
-        }
+    let result = comment;
+    const sortedKeywords = [...activeKeywords]
+      .filter((item) => item.enabled)
+      .sort((a, b) => b.keyword.length - a.keyword.length);
+
+    for (const { keyword, url } of sortedKeywords) {
+      const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+      if (format === 'html') {
+        result = result.replace(regex, `<a href="${url}">${keyword}</a>`);
+      } else if (format === 'markdown') {
+        result = result.replace(regex, `[${keyword}](${url})`);
+      } else if (format === 'bbcode') {
+        result = result.replace(regex, `[url=${url}]${keyword}[/url]`);
+      }
+    }
+
+    navigator.clipboard.writeText(result).catch((err) => {
+      setError('复制到剪贴板失败: ' + err.message);
+    });
+  };
+
+  const handleSelectProduct = async (productId: string) => {
+    setActiveProductId(productId);
+    await browser.runtime.sendMessage({ action: 'productTaskSetActiveProduct', productId });
+  };
+
+  const updateTaskRecord = (record: ProductPageStatusRecord) => {
+    setProductStatuses((prev) => ({
+      ...prev,
+      [record.productId]: [
+        ...(prev[record.productId] ?? []).filter((item) => item.pageKey !== record.pageKey),
+        record,
+      ],
+    }));
+
+    setActiveTaskRecord((prev) => {
+      if (!prev || prev.productId !== record.productId || prev.pageKey !== record.pageKey) {
+        return prev;
       }
 
-      navigator.clipboard.writeText(result).catch(err => {
-        setError('复制到剪贴板失败: ' + err.message);
-      });
+      return {
+        ...prev,
+        status: record.status,
+        taskVersion: record.version,
+        taskUpdatedAt: record.updatedAt,
+        comment: record.comment,
+        syncState: record.syncState,
+      };
+    });
+  };
+
+  const handleTaskStatusChange = async (task: ProductTaskRecord, status: PageStatus) => {
+    setTaskError(null);
+    const response = await browser.runtime.sendMessage({
+      action: 'productTaskUpdate',
+      productId: task.productId,
+      pageKey: task.pageKey,
+      status,
+      comment: task.comment,
+    });
+
+    if (!response.success) {
+      throw new Error(response.error || '更新任务状态失败');
     }
+
+    updateTaskRecord(response.record as ProductPageStatusRecord);
   };
 
   return (
@@ -330,33 +476,16 @@ function App() {
       <h1 className="text-3xl uppercase tracking-tight font-bold text-center mb-8">Commentor.AI</h1>
 
       <div className="tabs tabs-boxed mb-4">
-        <button
-          type="button"
-          className={`tab ${activeTab === 'comment' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('comment')}
-        >
+        <button type="button" className={`tab ${activeTab === 'comment' ? 'tab-active' : ''}`} onClick={() => setActiveTab('comment')}>
           评论
         </button>
-        <button
-          type="button"
-          className={`tab ${activeTab === 'library' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('library')}
-          data-testid="tab-library"
-        >
-          网页库
+        <button type="button" className={`tab ${activeTab === 'tasks' ? 'tab-active' : ''}`} onClick={() => setActiveTab('tasks')}>
+          产品任务
         </button>
-        <button
-          type="button"
-          className={`tab ${activeTab === 'sites' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('sites')}
-        >
-          站点
+        <button type="button" className={`tab ${activeTab === 'products' ? 'tab-active' : ''}`} onClick={() => setActiveTab('products')}>
+          产品
         </button>
-        <button
-          type="button"
-          className={`tab ${activeTab === 'settings' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('settings')}
-        >
+        <button type="button" className={`tab ${activeTab === 'settings' ? 'tab-active' : ''}`} onClick={() => setActiveTab('settings')}>
           设置
         </button>
       </div>
@@ -368,68 +497,134 @@ function App() {
       )}
 
       <div className={activeTab === 'comment' ? 'block' : 'hidden'}>
-          {activeLibraryRecord && (
-            <div className="card bg-base-200 mb-4" data-testid="active-library-record">
-              <div className="card-body p-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-sm font-semibold">{activeLibraryRecord.title || activeLibraryRecord.canonicalUrl}</p>
-                    <p className="text-xs text-base-content/70">{activeLibraryRecord.siteKey}</p>
-                  </div>
+        {activeTaskRecord && activeProduct && (
+          <div className="card bg-base-200 mb-4" data-testid="active-product-task">
+            <div className="card-body p-3 gap-3">
+              <div className="flex justify-between items-start gap-3">
+                <div>
+                  <p className="text-sm font-semibold">{activeTaskRecord.title || activeTaskRecord.canonicalUrl}</p>
+                  <p className="text-xs text-base-content/70">{activeProduct.name} · {activeTaskRecord.siteKey}</p>
+                </div>
+                <button type="button" className="btn btn-xs btn-ghost" onClick={() => setActiveTaskRecord(null)}>
+                  ✕
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {activeTaskRecord.status !== 'done' && (
                   <button
                     type="button"
-                    className="btn btn-xs btn-ghost"
-                    onClick={() => setActiveLibraryRecord(null)}
+                    className="btn btn-xs btn-success"
+                    onClick={() => {
+                      void handleTaskStatusChange(activeTaskRecord, 'done').catch((err) => {
+                        setTaskError(err instanceof Error ? err.message : '更新任务状态失败');
+                      });
+                    }}
                   >
-                    ✕
+                    标记完成
                   </button>
-                </div>
+                )}
+                {activeTaskRecord.status !== 'invalid' && (
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-error"
+                    onClick={() => {
+                      void handleTaskStatusChange(activeTaskRecord, 'invalid').catch((err) => {
+                        setTaskError(err instanceof Error ? err.message : '更新任务状态失败');
+                      });
+                    }}
+                  >
+                    标记无效
+                  </button>
+                )}
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          <SiteKeywordSelector
-            sites={sites}
-            onToggle={handleToggleKeyword}
-          />
+        <SiteKeywordSelector
+          sites={activeProduct ? [activeProduct] : []}
+          onToggle={handleToggleKeyword}
+        />
 
-          <button
-            type="button"
-            className="btn btn-warning w-full mb-4"
-            onClick={generateComment}
-            disabled={isGeneratingComment || isLoading || !hasValidProviderConfig(llmSettings)}
-          >
-            {isGeneratingComment || isLoading ? (
-              <>
-                <span className="loading loading-spinner"></span>正在生成
-              </>
-            ) : '生成评论'}
-          </button>
+        <button
+          type="button"
+          className="btn btn-warning w-full mb-4"
+          onClick={generateComment}
+          disabled={isGeneratingComment || isLoading || !hasValidProviderConfig(llmSettings) || !activeProduct}
+        >
+          {isGeneratingComment || isLoading ? (
+            <>
+              <span className="loading loading-spinner"></span>正在生成
+            </>
+          ) : '生成评论'}
+        </button>
 
-          {!llmSettings?.provider && (
-            <div className="text-sm text-warning mt-2 mb-4">
-              请先前往
-              <button
-                type="button"
-                onClick={() => setActiveTab('settings')}
-                className="text-info underline"
-              >
-                设置
-              </button>
-              标签页配置 LLM 提供商与 API Key
-            </div>
-          )}
+        {!activeProduct && (
+          <div className="text-sm text-warning mt-2 mb-4">请先到产品页创建并选择一个产品</div>
+        )}
 
-          <CommentOutput
-            comments={generatedComments || []}
-            keywords={allKeywords}
-            onCopy={handleCopy}
-          />
+        {!llmSettings?.provider && (
+          <div className="text-sm text-warning mt-2 mb-4">
+            请先前往
+            <button type="button" onClick={() => setActiveTab('settings')} className="text-info underline">
+              设置
+            </button>
+            标签页配置 LLM 提供商与 API Key
+          </div>
+        )}
+
+        <CommentOutput comments={generatedComments || []} keywords={activeKeywords} onCopy={handleCopy} />
       </div>
 
-      <div className={activeTab === 'sites' ? 'block' : 'hidden'}>
+      <div className={activeTab === 'tasks' ? 'block' : 'hidden'}>
+        <ProductTaskPanel
+          products={products}
+          tasksByProduct={tasksByProduct}
+          activeProductId={activeProductId}
+          loading={taskLoading}
+          error={taskError}
+          unconfigured={taskUnconfigured}
+          onSelectProduct={(productId) => void handleSelectProduct(productId)}
+          onRefresh={async () => {
+            await loadProductLibrary(true);
+          }}
+          onOpenTask={async (task) => {
+            try {
+              setTaskError(null);
+              const response = await browser.runtime.sendMessage({
+                action: 'productTaskOpenPage',
+                url: task.canonicalUrl || task.sourceUrl,
+                productId: task.productId,
+                pageKey: task.pageKey,
+                siteKey: task.siteKey,
+              });
+
+              if (!response.success) {
+                throw new Error(response.error || '打开页面失败');
+              }
+
+              setActiveProductId(task.productId);
+              setActiveProductContext(response.activeContext as ActiveProductContext);
+              setActiveTaskRecord(task);
+              setActiveTab('comment');
+            } catch (err) {
+              setTaskError(err instanceof Error ? err.message : '打开页面失败');
+            }
+          }}
+          onStatusChange={async (task, status) => {
+            try {
+              await handleTaskStatusChange(task, status);
+            } catch (err) {
+              setTaskError(err instanceof Error ? err.message : '更新任务状态失败');
+            }
+          }}
+        />
+      </div>
+
+      <div className={activeTab === 'products' ? 'block' : 'hidden'}>
         <SiteManager
-          sites={sites}
+          sites={products}
           onAddSite={handleAddSite}
           onUpdateSite={handleUpdateSite}
           onDeleteSite={handleDeleteSite}
@@ -440,65 +635,15 @@ function App() {
         />
       </div>
 
-      <div className={activeTab === 'library' ? 'block' : 'hidden'}>
-        {libraryError && (
-          <div className="alert alert-error mb-4" data-testid="library-open-error">
-            <span>{libraryError}</span>
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              onClick={() => setLibraryError(null)}
-            >
-              ✕
-            </button>
-          </div>
-        )}
-        <LibraryPanel
-          onOpenPage={async (record) => {
-            setLibraryError(null);
-            try {
-              const response = await browser.runtime.sendMessage({
-                action: 'libraryOpenPage',
-                url: record.canonicalUrl || record.sourceUrl,
-                pageKey: record.pageKey,
-                siteKey: record.siteKey,
-              });
-              if (response.success) {
-                setActiveLibraryRecord(record);
-                setActiveTab('comment');
-              } else {
-                setLibraryError(response.error || '打开页面失败');
-              }
-            } catch (err) {
-              setLibraryError(err instanceof Error ? err.message : '打开页面失败');
-            }
-          }}
-          onStatusChange={async (record, newStatus) => {
-            setLibraryError(null);
-            const response = await browser.runtime.sendMessage({
-              action: 'libraryStatusUpdate',
-              pageKey: record.pageKey,
-              siteKey: record.siteKey,
-              status: newStatus,
-              version: record.version,
-            });
-            if (!response.success) {
-              throw new Error(response.error || '更新状态失败');
-            }
-            return {
-              syncState: response.syncState as 'synced' | 'pending',
-              updatedRecord: response.updatedRecord,
-            };
-          }}
-        />
-      </div>
-
       <div className={activeTab === 'settings' ? 'block' : 'hidden'}>
         <SettingsPanel
           llmSettings={llmSettings}
           onSaved={setLlmSettings}
           datasourceConfig={datasourceConfig}
-          onDatasourceSaved={setDatasourceConfig}
+          onDatasourceSaved={(config) => {
+            setDatasourceConfig(config);
+            void loadProductLibrary(false);
+          }}
         />
       </div>
     </div>
