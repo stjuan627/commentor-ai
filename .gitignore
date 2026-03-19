@@ -13,6 +13,10 @@ stats.html
 stats-*.json
 .wxt
 web-ext.config.ts
+.env
+.env.*
+!.env.example
+.sisyphus/keys/
 
 # Editor directories and files
 .vscode/*

@@ -1,0 +1,4 @@
+
+> commentor-ai@0.1.1 compile /home/james/works/tooling/commentor-crx-feat-dataset
+> tsc --noEmit
+

@@ -1,0 +1,25 @@
+Task 10: Integration and Regression Verification
+
+COMPILE CHECK:
+✓ pnpm compile passes with zero TypeScript errors
+
+BUILD CHECKS:
+✓ pnpm build (Chrome) succeeds - output size: 435.34 kB
+✓ pnpm build:firefox succeeds - output size: 435.27 kB
+
+REGRESSION VERIFICATION:
+✓ generateComment function (App.tsx:125) does NOT depend on datasource or library
+✓ generateComment does NOT call libraryStatusUpdate
+✓ libraryStatusUpdate only called in onStatusChange callback (explicit user action)
+✓ Active library record displayed in comment tab (data-testid="active-library-record")
+✓ Existing keyword/site management unchanged
+✓ LLM settings and comment generation flow unchanged
+
+INTEGRATION VERIFICATION:
+✓ Library tab added without breaking existing tabs
+✓ Active library context shown in comment tab
+✓ Status updates are explicit user actions only
+✓ No auto-status-change after comment generation
+✓ Users without datasource can use extension normally
+
+All acceptance criteria met.

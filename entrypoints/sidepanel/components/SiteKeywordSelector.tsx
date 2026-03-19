@@ -1,14 +1,14 @@
-import type { SiteItem } from '../../../src/types';
+import type { Product } from '../../../src/types';
 
 interface SiteKeywordSelectorProps {
-  sites: SiteItem[];
+  sites: Product[];
   onToggle: (siteId: string, keywordIndex: number) => void;
 }
 
 export function SiteKeywordSelector({ sites, onToggle }: SiteKeywordSelectorProps) {
   return (
     <div className="mb-6 border rounded-lg p-3 bg-base-200">
-      <h2 className="text-lg font-semibold mb-2">关键词选择</h2>
+      <h2 className="text-lg font-semibold mb-2">产品关键词</h2>
 
       {sites.length > 0 ? (
         <div className="space-y-3">
@@ -31,13 +31,13 @@ export function SiteKeywordSelector({ sites, onToggle }: SiteKeywordSelectorProp
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-base-content/60">该站点暂无关键词</p>
+                 <p className="text-xs text-base-content/60">该产品暂无关键词</p>
               )}
             </div>
           ))}
         </div>
       ) : (
-        <p className="text-sm text-base-content/60">暂无站点，请先到设置页添加站点与关键词</p>
+         <p className="text-sm text-base-content/60">暂无产品，请先到产品页添加产品与关键词</p>
       )}
     </div>
   );
