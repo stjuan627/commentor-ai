@@ -1,5 +1,14 @@
 // 不再需要为 wxt/utils 模块提供类型声明，因为我们直接从 wxt/utils 导入
 
+interface ImportMetaEnv {
+  readonly WXT_MANIFEST_KEY?: string;
+  readonly WXT_GOOGLE_CLIENT_ID?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 // 声明全局 browser 对象
 declare const browser: {
   runtime: {
@@ -45,7 +54,7 @@ declare const browser: {
 
 declare const chrome: {
   identity?: {
-    getAuthToken: (details: { interactive: boolean }) => Promise<string | undefined>;
+    getAuthToken: (details: { interactive: boolean }) => Promise<string | { token?: string; grantedScopes?: string[] } | undefined>;
     removeCachedAuthToken: (details: { token: string }) => Promise<void>;
     clearAllCachedAuthTokens: () => Promise<void>;
   };

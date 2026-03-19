@@ -3,7 +3,7 @@ import type { PageRecord, LibrarySnapshot, PageStatus } from '../../../src/types
 
 interface LibraryPanelProps {
   onOpenPage: (record: PageRecord) => void;
-  onStatusChange: (record: PageRecord, newStatus: PageStatus) => Promise<void>;
+  onStatusChange: (record: PageRecord, newStatus: PageStatus) => Promise<{ syncState: 'synced' | 'pending'; updatedRecord?: PageRecord | null }>;
 }
 
 export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) {
@@ -91,17 +91,33 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
     : records;
 
   const handleStatusChange = async (record: PageRecord, newStatus: PageStatus) => {
+    const optimisticUpdatedAt = new Date().toISOString();
+
     if (snapshot) {
       const updatedRecords = snapshot.records.map(r =>
         r.pageKey === record.pageKey && r.siteKey === record.siteKey
-          ? { ...r, status: newStatus, syncState: 'pending' as const }
+          ? { ...r, status: newStatus, version: record.version + 1, updatedAt: optimisticUpdatedAt, syncState: 'pending' as const }
           : r
       );
       setSnapshot({ ...snapshot, records: updatedRecords });
     }
 
     try {
-      await onStatusChange(record, newStatus);
+      const result = await onStatusChange(record, newStatus);
+      if (snapshot) {
+        const finalizedRecords = snapshot.records.map(r =>
+          r.pageKey === record.pageKey && r.siteKey === record.siteKey
+            ? {
+                ...r,
+                status: result.updatedRecord?.status ?? newStatus,
+                version: result.updatedRecord?.version ?? record.version + 1,
+                updatedAt: result.updatedRecord?.updatedAt ?? optimisticUpdatedAt,
+                syncState: result.syncState,
+              }
+            : r
+        );
+        setSnapshot({ ...snapshot, records: finalizedRecords });
+      }
     } catch (err) {
       if (snapshot) {
         const revertedRecords = snapshot.records.map(r =>

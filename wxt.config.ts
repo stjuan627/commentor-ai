@@ -1,10 +1,22 @@
 import { defineConfig } from 'wxt';
 
+const env = (import.meta as ImportMeta & {
+  env: {
+    WXT_MANIFEST_KEY?: string;
+    WXT_GOOGLE_CLIENT_ID?: string;
+  };
+}).env;
+
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: ({ browser }) => ({
     name: "Commentor AI",
     description: "Extracts webpage content and generates comments with AI.",
+    key: browser === 'chrome' ? env.WXT_MANIFEST_KEY : undefined,
+    oauth2: browser === 'chrome' ? {
+      client_id: env.WXT_GOOGLE_CLIENT_ID,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    } : undefined,
     permissions: [
       "storage",
       "activeTab",

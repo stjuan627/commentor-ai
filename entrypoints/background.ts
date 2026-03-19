@@ -260,11 +260,18 @@ export default defineBackground(() => {
           const config: DatasourceConfig | undefined = result.datasourceConfig;
           const snapshot: LibrarySnapshot | undefined = result.librarySnapshot;
           const queue: any[] = result.syncQueue || [];
+          const nextVersion = version + 1;
+          const updatedAt = new Date().toISOString();
+
+          let updatedRecord = null;
 
           if (snapshot) {
             const updatedRecords = snapshot.records.map(r =>
               r.pageKey === pageKey && r.siteKey === siteKey
-                ? { ...r, status, version: version + 1, updatedAt: new Date().toISOString(), syncState: 'pending' as const }
+                ? (() => {
+                    updatedRecord = { ...r, status, version: nextVersion, updatedAt, syncState: 'pending' as const };
+                    return updatedRecord;
+                  })()
                 : r
             );
             await browser.storage.local.set({ librarySnapshot: { ...snapshot, records: updatedRecords } });
@@ -275,8 +282,8 @@ export default defineBackground(() => {
             pageKey,
             siteKey,
             status,
-            version: version + 1,
-            enqueuedAt: new Date().toISOString(),
+            version: nextVersion,
+            enqueuedAt: updatedAt,
             retryCount: 0,
             syncState: 'pending' as const,
           };
@@ -285,16 +292,31 @@ export default defineBackground(() => {
 
           if (config && config.connected) {
             try {
-              await sheetsService.batchUpdateStatus(config, [{ pageKey, status, version: version + 1 }]);
+              await sheetsService.batchUpdateStatus(config, [{ pageKey, status, version: nextVersion }]);
               const updatedQueue = queue.filter(q => q.id !== queueItem.id);
-              await browser.storage.local.set({ syncQueue: updatedQueue });
-              sendResponse({ success: true, syncState: 'synced' });
+
+              if (snapshot) {
+                const syncedRecords = snapshot.records.map(r =>
+                  r.pageKey === pageKey && r.siteKey === siteKey
+                    ? { ...r, status, version: nextVersion, updatedAt, syncState: 'synced' as const }
+                    : r
+                );
+                updatedRecord = syncedRecords.find(r => r.pageKey === pageKey && r.siteKey === siteKey) || updatedRecord;
+                await browser.storage.local.set({
+                  syncQueue: updatedQueue,
+                  librarySnapshot: { ...snapshot, records: syncedRecords },
+                });
+              } else {
+                await browser.storage.local.set({ syncQueue: updatedQueue });
+              }
+
+              sendResponse({ success: true, syncState: 'synced', updatedRecord });
             } catch (syncError: unknown) {
               console.error('Sync failed, queued for retry:', syncError);
-              sendResponse({ success: true, syncState: 'pending', error: syncError instanceof Error ? syncError.message : 'Sync failed' });
+              sendResponse({ success: true, syncState: 'pending', error: syncError instanceof Error ? syncError.message : 'Sync failed', updatedRecord });
             }
           } else {
-            sendResponse({ success: true, syncState: 'pending' });
+            sendResponse({ success: true, syncState: 'pending', updatedRecord });
           }
         } catch (error: unknown) {
           console.error('Library status update failed:', error);

@@ -485,6 +485,10 @@ function App() {
             if (!response.success) {
               throw new Error(response.error || '更新状态失败');
             }
+            return {
+              syncState: response.syncState as 'synced' | 'pending',
+              updatedRecord: response.updatedRecord,
+            };
           }}
         />
       </div>

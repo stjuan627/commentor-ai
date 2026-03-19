@@ -1,5 +1,19 @@
 import type { AuthState } from '../types';
 
+type AuthTokenResult = string | { token?: string } | undefined;
+
+function extractToken(result: AuthTokenResult): string | null {
+  if (typeof result === 'string') {
+    return result;
+  }
+
+  if (result && typeof result === 'object' && typeof result.token === 'string') {
+    return result.token;
+  }
+
+  return null;
+}
+
 export async function isAuthSupported(): Promise<boolean> {
   return typeof chrome !== 'undefined' && !!chrome.identity;
 }
@@ -24,8 +38,8 @@ export async function getAccessToken(): Promise<string | null> {
   }
 
   try {
-    const token = await chrome.identity!.getAuthToken({ interactive: false });
-    return token || null;
+    const result = await chrome.identity!.getAuthToken({ interactive: false });
+    return extractToken(result);
   } catch (error) {
     console.error('Failed to get cached token:', error);
     return null;
@@ -41,7 +55,8 @@ export async function acquireToken(interactive: boolean = true): Promise<string>
   try {
     await setAuthState({ status: 'connecting' });
     
-    const token = await chrome.identity!.getAuthToken({ interactive });
+    const result = await chrome.identity!.getAuthToken({ interactive });
+    const token = extractToken(result);
     
     if (!token) {
       await setAuthState({ status: 'error', error: 'No token returned' });
