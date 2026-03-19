@@ -107,7 +107,7 @@ function App() {
       });
 
       if (!response.success) {
-        throw new Error(response.error || '加载产品任务失败');
+        throw new Error(response.error || '加载项目任务失败');
       }
 
       const snapshot = response.snapshot as {
@@ -128,7 +128,7 @@ function App() {
       setActiveTaskRecord(deriveActiveTask(nextContext, nextProducts, nextWebPageSnapshot, nextStatuses));
       setTaskUnconfigured(response.status === 'unconfigured');
     } catch (err) {
-      setTaskError(err instanceof Error ? err.message : '加载产品任务失败');
+      setTaskError(err instanceof Error ? err.message : '加载项目任务失败');
     } finally {
       setTaskLoading(false);
     }
@@ -184,7 +184,7 @@ function App() {
 
   const generateComment = async () => {
     if (!activeProduct) {
-      setError('请先选择一个产品');
+      setError('请先选择一个项目');
       return;
     }
 
@@ -224,7 +224,7 @@ function App() {
     }
 
     if (!activeProduct) {
-      setError('请先选择一个产品');
+      setError('请先选择一个项目');
       return;
     }
 
@@ -298,6 +298,7 @@ function App() {
     ];
     await persistProducts(nextProducts);
     const nextActiveProductId = nextProducts[nextProducts.length - 1]?.id ?? null;
+    resetProductScopedState(nextActiveProductId);
     setActiveProductId(nextActiveProductId);
     await browser.runtime.sendMessage({ action: 'productTaskSetActiveProduct', productId: nextActiveProductId });
   };
@@ -316,6 +317,7 @@ function App() {
     await persistProducts(nextProducts);
     if (activeProductId === siteId) {
       const nextActiveProductId = nextProducts[0]?.id ?? null;
+      resetProductScopedState(nextActiveProductId);
       setActiveProductId(nextActiveProductId);
       await browser.runtime.sendMessage({ action: 'productTaskSetActiveProduct', productId: nextActiveProductId });
     }
@@ -426,7 +428,37 @@ function App() {
     });
   };
 
+  const clearCommentWorkspaceState = () => {
+    setGeneratedComments(undefined);
+    setFormFields([]);
+    setError(null);
+    setTaskError(null);
+  };
+
+  const resetProductScopedState = (nextProductId: string | null) => {
+    clearCommentWorkspaceState();
+    setActiveTaskRecord((prev) => {
+      if (!prev || prev.productId === nextProductId) {
+        return prev;
+      }
+
+      return null;
+    });
+    setActiveProductContext((prev) => {
+      if (!prev || prev.productId === nextProductId) {
+        return prev;
+      }
+
+      return null;
+    });
+  };
+
   const handleSelectProduct = async (productId: string) => {
+    if (productId === activeProductId) {
+      return;
+    }
+
+    resetProductScopedState(productId);
     setActiveProductId(productId);
     await browser.runtime.sendMessage({ action: 'productTaskSetActiveProduct', productId });
   };
@@ -550,17 +582,39 @@ function App() {
 
   return (
     <div className="w-full h-full bg-base-100 p-4">
-      <h1 className="text-3xl uppercase tracking-tight font-bold text-center mb-8">Commentor.AI</h1>
+      <div className="mb-4">
+        <select
+          className="select select-bordered w-full text-base font-semibold"
+          value={activeProductId ?? ''}
+          onChange={(event) => {
+            const nextProductId = event.target.value;
+            if (nextProductId) {
+              void handleSelectProduct(nextProductId);
+            }
+          }}
+          disabled={products.length === 0}
+        >
+          {products.length === 0 ? (
+            <option value="">暂无项目</option>
+          ) : (
+            products.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
 
       <div className="tabs tabs-boxed mb-4">
         <button type="button" className={`tab ${activeTab === 'comment' ? 'tab-active' : ''}`} onClick={() => setActiveTab('comment')}>
           评论
         </button>
         <button type="button" className={`tab ${activeTab === 'tasks' ? 'tab-active' : ''}`} onClick={() => setActiveTab('tasks')}>
-          产品任务
+          任务
         </button>
         <button type="button" className={`tab ${activeTab === 'products' ? 'tab-active' : ''}`} onClick={() => setActiveTab('products')}>
-          产品
+          项目
         </button>
         <button type="button" className={`tab ${activeTab === 'settings' ? 'tab-active' : ''}`} onClick={() => setActiveTab('settings')}>
           设置
@@ -638,7 +692,7 @@ function App() {
         </button>
 
         {!activeProduct && (
-          <div className="text-sm text-warning mt-2 mb-4">请先到产品页创建并选择一个产品</div>
+          <div className="text-sm text-warning mt-2 mb-4">请先到项目页创建并选择一个项目</div>
         )}
 
         {!llmSettings?.provider && (
@@ -672,13 +726,13 @@ function App() {
           loading={taskLoading}
           error={taskError}
           unconfigured={taskUnconfigured}
-          onSelectProduct={(productId) => void handleSelectProduct(productId)}
           onRefresh={async () => {
             await loadProductLibrary(true);
           }}
           onOpenTask={async (task) => {
             try {
               setTaskError(null);
+              clearCommentWorkspaceState();
               const response = await browser.runtime.sendMessage({
                 action: 'productTaskOpenPage',
                 url: task.canonicalUrl || task.sourceUrl,

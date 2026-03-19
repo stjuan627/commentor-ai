@@ -7,37 +7,29 @@ interface SiteKeywordSelectorProps {
 
 export function SiteKeywordSelector({ sites, onToggle }: SiteKeywordSelectorProps) {
   return (
-    <div className="mb-6 border rounded-lg p-3 bg-base-200">
-      <h2 className="text-lg font-semibold mb-2">产品关键词</h2>
+    <div className="mb-4 rounded-xl bg-base-200 px-3 py-2.5">
+      <h2 className="mb-2 text-sm font-semibold text-base-content/80">关键词</h2>
 
       {sites.length > 0 ? (
-        <div className="space-y-3">
+        <div className="flex flex-wrap gap-2">
           {sites.map((site) => (
-            <div key={site.id} className="rounded-md border border-base-300 bg-base-100 p-3">
-              <p className="text-sm font-semibold mb-2">{site.name}</p>
-
-              {site.keywords.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {site.keywords.map((item, index) => (
-                    <button
-                      key={`${site.id}-${item.keyword}-${index}`}
-                      type="button"
-                      onClick={() => onToggle(site.id, index)}
-                      className={`badge badge-lg cursor-pointer ${item.enabled ? 'badge-warning' : 'badge-outline'}`}
-                      title={item.url}
-                    >
-                      {item.keyword}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                 <p className="text-xs text-base-content/60">该产品暂无关键词</p>
-              )}
-            </div>
+            site.keywords.length > 0 ? site.keywords.map((item, index) => (
+              <button
+                key={`${site.id}-${item.keyword}-${index}`}
+                type="button"
+                onClick={() => onToggle(site.id, index)}
+                className={`badge cursor-pointer ${item.enabled ? 'badge-warning' : 'badge-outline'}`}
+                title={item.url}
+              >
+                {item.keyword}
+              </button>
+            )) : (
+              <p key={site.id} className="text-xs text-base-content/60">该项目暂无关键词</p>
+            )
           ))}
         </div>
       ) : (
-         <p className="text-sm text-base-content/60">暂无产品，请先到产品页添加产品与关键词</p>
+        <p className="text-xs text-base-content/60">暂无项目，请先到项目页添加项目与关键词</p>
       )}
     </div>
   );
