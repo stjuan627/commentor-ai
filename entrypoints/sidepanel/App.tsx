@@ -13,6 +13,7 @@ import type {
   ProductTaskRecord,
   WebPageSnapshot,
 } from '../../src/types/library';
+import { normalizePageKey } from '../../src/types/library';
 import type { ExtractResponse, ExtractedContent } from '../../src/types/content';
 import type { LLMSettings } from '../../src/types/llm';
 import type { FormField } from '../../src/types/form';
@@ -34,6 +35,8 @@ function App() {
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
   const [activeProductContext, setActiveProductContext] = useState<ActiveProductContext | null>(null);
   const [activeTaskRecord, setActiveTaskRecord] = useState<ProductTaskRecord | null>(null);
+  const [selectedCommentTaskKey, setSelectedCommentTaskKey] = useState<string | null>(null);
+  const [currentTabPageKey, setCurrentTabPageKey] = useState<string | null>(null);
   const [taskError, setTaskError] = useState<string | null>(null);
   const [taskLoading, setTaskLoading] = useState(false);
   const [taskUnconfigured, setTaskUnconfigured] = useState(false);
@@ -69,12 +72,69 @@ function App() {
   );
 
   const activeKeywords = activeProduct?.keywords ?? [];
+  const activeProjectTasks = useMemo(() => {
+    if (!activeProduct) {
+      return [] as ProductTaskRecord[];
+    }
+
+    return tasksByProduct[activeProduct.id] ?? [];
+  }, [activeProduct, tasksByProduct]);
+
+  const defaultActiveTask = useMemo(() => {
+    if (activeProjectTasks.length === 0) {
+      return null;
+    }
+
+    return activeProjectTasks.find((task) => task.status === 'pending') ?? activeProjectTasks[0] ?? null;
+  }, [activeProjectTasks]);
+
+  const currentCommentTask = useMemo(() => {
+    const selectedTask = selectedCommentTaskKey
+      ? activeProjectTasks.find((task) => task.pageKey === selectedCommentTaskKey) ?? null
+      : null;
+
+    if (selectedTask) {
+      return selectedTask;
+    }
+
+    const hasLiveTaskBinding = Boolean(
+      activeTaskRecord
+      && activeProductContext
+      && activeTaskRecord.productId === activeProductId
+      && activeTaskRecord.pageKey === activeProductContext.pageKey
+      && currentTabPageKey === activeTaskRecord.pageKey,
+    );
+
+    if (hasLiveTaskBinding && activeTaskRecord) {
+      return activeTaskRecord;
+    }
+
+    return defaultActiveTask;
+  }, [activeProductContext, activeProductId, activeTaskRecord, activeProjectTasks, currentTabPageKey, defaultActiveTask, selectedCommentTaskKey]);
+
+  const currentCommentTaskIndex = useMemo(() => {
+    if (!currentCommentTask) {
+      return -1;
+    }
+
+    return activeProjectTasks.findIndex((task) => task.pageKey === currentCommentTask.pageKey);
+  }, [activeProjectTasks, currentCommentTask]);
 
   const refreshLlmSettings = useCallback(() => {
     browser.storage.local.get('llmSettings').then((result: { llmSettings?: LLMSettings }) => {
       setLlmSettings(result.llmSettings ?? null);
     }).catch((err) => {
       console.error('Error refreshing LLM settings:', err);
+    });
+  }, []);
+
+  const refreshCurrentTabPageKey = useCallback(() => {
+    browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+      const activeTabUrl = tabs[0]?.url;
+      setCurrentTabPageKey(activeTabUrl ? normalizePageKey(activeTabUrl) : null);
+    }).catch((err) => {
+      console.error('Error reading current tab URL:', err);
+      setCurrentTabPageKey(null);
     });
   }, []);
 
@@ -136,6 +196,7 @@ function App() {
 
   useEffect(() => {
     refreshLlmSettings();
+    refreshCurrentTabPageKey();
 
     browser.storage.local.get('datasourceConfig').then((result: { datasourceConfig?: DatasourceConfig }) => {
       setDatasourceConfig(result.datasourceConfig ?? null);
@@ -145,20 +206,26 @@ function App() {
 
     void loadProductLibrary(false);
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        refreshLlmSettings();
-      }
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          refreshLlmSettings();
+          refreshCurrentTabPageKey();
+        }
+      };
+
+    const handleWindowFocus = () => {
+      refreshLlmSettings();
+      refreshCurrentTabPageKey();
     };
 
-    window.addEventListener('focus', refreshLlmSettings);
+    window.addEventListener('focus', handleWindowFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.removeEventListener('focus', refreshLlmSettings);
+      window.removeEventListener('focus', handleWindowFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [loadProductLibrary, refreshLlmSettings]);
+  }, [loadProductLibrary, refreshCurrentTabPageKey, refreshLlmSettings]);
 
   useEffect(() => {
     setActiveTaskRecord(deriveActiveTask(activeProductContext, products, webPageSnapshot, productStatuses));
@@ -437,6 +504,7 @@ function App() {
 
   const resetProductScopedState = (nextProductId: string | null) => {
     clearCommentWorkspaceState();
+    setSelectedCommentTaskKey(null);
     setActiveTaskRecord((prev) => {
       if (!prev || prev.productId === nextProductId) {
         return prev;
@@ -461,6 +529,59 @@ function App() {
     resetProductScopedState(productId);
     setActiveProductId(productId);
     await browser.runtime.sendMessage({ action: 'productTaskSetActiveProduct', productId });
+  };
+
+  const navigateToTaskInCurrentTab = async (task: ProductTaskRecord) => {
+    const url = task.canonicalUrl || task.sourceUrl;
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    const currentTab = tabs[0];
+
+    if (!currentTab?.id) {
+      throw new Error('未找到当前标签页');
+    }
+
+    clearCommentWorkspaceState();
+    await browser.tabs.update(currentTab.id, { url });
+
+    const activeContext: ActiveProductContext = {
+      productId: task.productId,
+      pageKey: task.pageKey,
+      siteKey: task.siteKey,
+      tabId: currentTab.id,
+      boundAt: new Date().toISOString(),
+    };
+
+    await browser.storage.local.set({
+      activeProductContext: activeContext,
+      activeProductId: task.productId,
+    });
+
+    setCurrentTabPageKey(task.pageKey);
+    setSelectedCommentTaskKey(task.pageKey);
+    setActiveProductId(task.productId);
+    setActiveProductContext(activeContext);
+    setActiveTaskRecord(task);
+  };
+
+  const handleCommentTaskSelection = (task: ProductTaskRecord | null) => {
+    if (!task) {
+      return;
+    }
+
+    setSelectedCommentTaskKey(task.pageKey);
+    setActiveTaskRecord(task);
+  };
+
+  const handleCommentTaskOpen = async (task: ProductTaskRecord | null) => {
+    if (!task) {
+      return;
+    }
+
+    try {
+      await navigateToTaskInCurrentTab(task);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '切换任务失败');
+    }
   };
 
   const updateTaskRecord = (record: ProductPageStatusRecord) => {
@@ -628,46 +749,89 @@ function App() {
       )}
 
       <div className={activeTab === 'comment' ? 'block' : 'hidden'}>
-        {activeTaskRecord && activeProduct && (
+        {currentCommentTask && activeProduct && (
           <div className="card bg-base-200 mb-4" data-testid="active-product-task">
             <div className="card-body p-3 gap-3">
-              <div className="flex justify-between items-start gap-3">
-                <div>
-                  <p className="text-sm font-semibold">{activeTaskRecord.title || activeTaskRecord.canonicalUrl}</p>
-                  <p className="text-xs text-base-content/70">{activeProduct.name} · {activeTaskRecord.siteKey}</p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold">{currentCommentTask.siteKey}</p>
+                    <span className={`badge badge-sm ${currentCommentTask.status === 'done' ? 'badge-success' : currentCommentTask.status === 'invalid' ? 'badge-error' : 'badge-warning'}`}>
+                      {currentCommentTask.status === 'done' ? '已完成' : currentCommentTask.status === 'invalid' ? '无效' : '未完成'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-1 block truncate text-left text-xs text-base-content/70"
+                    title={currentCommentTask.canonicalUrl || currentCommentTask.sourceUrl}
+                  >
+                    {currentCommentTask.canonicalUrl || currentCommentTask.sourceUrl}
+                  </button>
                 </div>
-                <button type="button" className="btn btn-xs btn-ghost" onClick={() => setActiveTaskRecord(null)}>
-                  ✕
-                </button>
+
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {activeTaskRecord.status !== 'done' && (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  {currentCommentTask.status !== 'done' && (
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-success"
+                      onClick={() => {
+                        void handleTaskStatusChange(currentCommentTask, 'done').catch((err) => {
+                          setError(err instanceof Error ? err.message : '更新任务状态失败');
+                        });
+                      }}
+                    >
+                      标记完成
+                    </button>
+                  )}
+                  {currentCommentTask.status !== 'invalid' && (
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-error"
+                      onClick={() => {
+                        void handleTaskStatusChange(currentCommentTask, 'invalid').catch((err) => {
+                          setError(err instanceof Error ? err.message : '更新任务状态失败');
+                        });
+                      }}
+                    >
+                      标记无效
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="btn btn-xs btn-success"
+                    className="btn btn-xs btn-ghost"
                     onClick={() => {
-                      void handleTaskStatusChange(activeTaskRecord, 'done').catch((err) => {
-                        setTaskError(err instanceof Error ? err.message : '更新任务状态失败');
-                      });
+                      handleCommentTaskSelection(activeProjectTasks[currentCommentTaskIndex - 1] ?? null);
                     }}
+                    disabled={currentCommentTaskIndex <= 0}
                   >
-                    标记完成
+                    ←
                   </button>
-                )}
-                {activeTaskRecord.status !== 'invalid' && (
                   <button
                     type="button"
-                    className="btn btn-xs btn-error"
+                    className="btn btn-xs btn-primary"
                     onClick={() => {
-                      void handleTaskStatusChange(activeTaskRecord, 'invalid').catch((err) => {
-                        setTaskError(err instanceof Error ? err.message : '更新任务状态失败');
-                      });
+                      void handleCommentTaskOpen(currentCommentTask);
                     }}
                   >
-                    标记无效
+                    打开
                   </button>
-                )}
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-ghost"
+                    onClick={() => {
+                      handleCommentTaskSelection(activeProjectTasks[currentCommentTaskIndex + 1] ?? null);
+                    }}
+                    disabled={currentCommentTaskIndex < 0 || currentCommentTaskIndex >= activeProjectTasks.length - 1}
+                  >
+                    →
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -741,13 +905,14 @@ function App() {
                 siteKey: task.siteKey,
               });
 
-              if (!response.success) {
-                throw new Error(response.error || '打开页面失败');
-              }
+               if (!response.success) {
+                 throw new Error(response.error || '打开页面失败');
+               }
 
-              setActiveProductId(task.productId);
-              setActiveProductContext(response.activeContext as ActiveProductContext);
-              setActiveTaskRecord(task);
+               setSelectedCommentTaskKey(task.pageKey);
+               setActiveProductId(task.productId);
+               setActiveProductContext(response.activeContext as ActiveProductContext);
+               setActiveTaskRecord(task);
               setActiveTab('comment');
             } catch (err) {
               setTaskError(err instanceof Error ? err.message : '打开页面失败');

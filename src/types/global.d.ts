@@ -33,6 +33,11 @@ declare const browser: {
       url?: string;
       title?: string;
     }>>;
+    update: (tabId: number, updateProperties: { url?: string; active?: boolean }) => Promise<{
+      id?: number;
+      url?: string;
+      title?: string;
+    }>;
     sendMessage: (tabId: number, message: any) => Promise<any>;
     create: (createProperties: { url: string; active?: boolean }) => Promise<{ id?: number; url?: string }>;
   };
