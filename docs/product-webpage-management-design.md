@@ -51,9 +51,6 @@ export interface WebPage {
   /** 网站域名，用于分组 */
   siteKey: string;
   
-  /** 原始来源 URL */
-  sourceUrl: string;
-  
   /** 规范化后的 URL（去除跟踪参数） */
   canonicalUrl: string;
   
@@ -831,7 +828,6 @@ Spreadsheet: "Commentor_网页库管理"
 |------|------|------|------|
 | pageKey | string | 是 | 唯一标识，规范化后的 URL |
 | siteKey | string | 是 | 网站域名 |
-| sourceUrl | string | 是 | 原始来源 URL |
 | canonicalUrl | string | 是 | 规范化后的 URL |
 | title | string | 是 | 页面标题 |
 | description | string | 否 | 页面描述 |
@@ -845,7 +841,7 @@ Spreadsheet: "Commentor_网页库管理"
 
 **表头示例**：
 ```
-pageKey | siteKey | sourceUrl | canonicalUrl | title | description | author | publishedAt | language | version | dataState | updatedAt | updatedBy
+pageKey | siteKey | canonicalUrl | title | description | author | publishedAt | language | version | dataState | updatedAt | updatedBy
 ```
 
 ### 6.3 "产品列表" Sheet
@@ -1512,7 +1508,6 @@ export interface ProductConfig {
 export interface WebPage {
   pageKey: string;
   siteKey: string;
-  sourceUrl: string;
   canonicalUrl: string;
   title: string;
   metadata?: {

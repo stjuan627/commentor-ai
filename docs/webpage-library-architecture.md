@@ -42,7 +42,6 @@
 interface PageRecord {
   pageKey: string;       // URL 规范化后的唯一键（去 tracking 参数）
   siteKey: string;       // 域名（hostname），用于分组
-  sourceUrl: string;     // 原始 URL
   canonicalUrl: string;  // 规范 URL
   title: string;         // 页面标题
   status: PageStatus;    // 'pending' | 'done' | 'invalid'
@@ -335,7 +334,6 @@ interface SettingsPanelProps {
 |------|------|------|
 | site_key | string | 站点域名 |
 | page_key | string | 规范化后的 URL（唯一键） |
-| source_url | string | 原始 URL |
 | canonical_url | string | 规范 URL |
 | title | string | 页面标题 |
 | status | string | 'pending'/'done'/'invalid' |
