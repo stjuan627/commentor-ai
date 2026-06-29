@@ -11,6 +11,7 @@ import type {
   ProductPageStatusRecord,
   ProductStatusSnapshot,
   ProductTaskRecord,
+  WebPageBooleanField,
   WebPageSnapshot,
 } from '../../src/types/library';
 import { normalizePageKey } from '../../src/types/library';
@@ -18,6 +19,21 @@ import type { ExtractResponse, ExtractedContent } from '../../src/types/content'
 import type { LLMSettings } from '../../src/types/llm';
 import type { FormField } from '../../src/types/form';
 import { CommentOutput, FormFieldList, ProductTaskPanel, SettingsPanel, SiteKeywordSelector, SiteManager } from './components';
+
+const META_BADGE_CLASS = 'badge badge-sm badge-outline border-base-content/30 text-base-content/75';
+
+const WEB_PAGE_TYPE_LABELS: Record<ProductTaskRecord['type'], string> = {
+  profile: 'Profile',
+  comment: 'Comment',
+  post: 'Post',
+};
+
+const WEB_PAGE_FORMAT_LABELS: Record<ProductTaskRecord['format'], string> = {
+  html: 'HTML',
+  markdown: 'Markdown',
+  bbcode: 'BBCode',
+  others: 'Others',
+};
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
@@ -532,7 +548,7 @@ function App() {
   };
 
   const navigateToTaskInCurrentTab = async (task: ProductTaskRecord) => {
-    const url = task.canonicalUrl || task.sourceUrl;
+    const url = task.pageKey;
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
     const currentTab = tabs[0];
 
@@ -624,6 +640,46 @@ function App() {
     }
 
     updateTaskRecord(response.record as ProductPageStatusRecord);
+  };
+
+  const handleTaskPageFieldChange = async (task: ProductTaskRecord, field: WebPageBooleanField, value: boolean) => {
+    setTaskError(null);
+    const response = await browser.runtime.sendMessage({
+      action: 'productTaskPageFieldUpdate',
+      pageKey: task.pageKey,
+      field,
+      value,
+    });
+
+    if (!response.success) {
+      throw new Error(response.error || '更新页面字段失败');
+    }
+
+    setWebPageSnapshot((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        records: prev.records.map((record) => (
+          record.pageKey === task.pageKey
+            ? { ...record, [field]: value }
+            : record
+        )),
+      };
+    });
+
+    setActiveTaskRecord((prev) => {
+      if (!prev || prev.productId !== task.productId || prev.pageKey !== task.pageKey) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [field]: value,
+      };
+    });
   };
 
   const handleScanFields = async () => {
@@ -750,23 +806,69 @@ function App() {
 
       <div className={activeTab === 'comment' ? 'block' : 'hidden'}>
         {currentCommentTask && activeProduct && (
-          <div className="card bg-base-200 mb-4" data-testid="active-product-task">
+          <div
+            className={`card relative overflow-hidden border ${currentCommentTask.status === 'done' ? 'border-success bg-success/10' : 'border-transparent bg-base-200'} mb-4`}
+            data-testid="active-product-task"
+          >
+            {currentCommentTask.status === 'done' && (
+              <span className="absolute right-0 top-0 flex h-6 w-6 items-start justify-end rounded-bl-xl bg-success text-success-content">
+                <span className="pr-1 pt-0.5 text-xs font-bold">✓</span>
+              </span>
+            )}
             <div className="card-body p-3 gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-semibold">{currentCommentTask.siteKey}</p>
-                    <span className={`badge badge-sm ${currentCommentTask.status === 'done' ? 'badge-success' : currentCommentTask.status === 'invalid' ? 'badge-error' : 'badge-warning'}`}>
-                      {currentCommentTask.status === 'done' ? '已完成' : currentCommentTask.status === 'invalid' ? '无效' : '未完成'}
-                    </span>
+                    {currentCommentTask.status !== 'done' && (
+                      <span className={`badge badge-sm ${currentCommentTask.status === 'invalid' ? 'badge-error' : 'badge-warning'}`}>
+                        {currentCommentTask.status === 'invalid' ? '无效' : '未完成'}
+                      </span>
+                    )}
                   </div>
                   <button
                     type="button"
                     className="mt-1 block truncate text-left text-xs text-base-content/70"
-                    title={currentCommentTask.canonicalUrl || currentCommentTask.sourceUrl}
+                    title={currentCommentTask.pageKey}
                   >
-                    {currentCommentTask.canonicalUrl || currentCommentTask.sourceUrl}
+                    {currentCommentTask.pageKey}
                   </button>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className={META_BADGE_CLASS}>{WEB_PAGE_TYPE_LABELS[currentCommentTask.type]}</span>
+                    <span className={META_BADGE_CLASS}>{WEB_PAGE_FORMAT_LABELS[currentCommentTask.format]}</span>
+                    {currentCommentTask.category && <span className={META_BADGE_CLASS}>{currentCommentTask.category}</span>}
+                    {currentCommentTask.country && <span className={META_BADGE_CLASS}>{currentCommentTask.country}</span>}
+                    {currentCommentTask.dofollow && <span className={META_BADGE_CLASS}>Dofollow</span>}
+                    {currentCommentTask.loginRequired && <span className="badge badge-sm badge-warning">需登录</span>}
+                    {currentCommentTask.approvalRequired && <span className="badge badge-sm badge-warning">需审核</span>}
+                    {currentCommentTask.loginRequired === null && (
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-outline btn-warning"
+                        onClick={() => {
+                          void handleTaskPageFieldChange(currentCommentTask, 'loginRequired', true).catch((err) => {
+                            setError(err instanceof Error ? err.message : '更新页面字段失败');
+                          });
+                        }}
+                      >
+                        要登录
+                      </button>
+                    )}
+                    {currentCommentTask.approvalRequired === null && (
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-outline btn-warning"
+                        onClick={() => {
+                          void handleTaskPageFieldChange(currentCommentTask, 'approvalRequired', true).catch((err) => {
+                            setError(err instanceof Error ? err.message : '更新页面字段失败');
+                          });
+                        }}
+                      >
+                        要审核
+                      </button>
+                    )}
+                    {currentCommentTask.disabled && <span className={META_BADGE_CLASS}>已禁用</span>}
+                  </div>
                 </div>
 
               </div>
@@ -899,7 +1001,7 @@ function App() {
               clearCommentWorkspaceState();
               const response = await browser.runtime.sendMessage({
                 action: 'productTaskOpenPage',
-                url: task.canonicalUrl || task.sourceUrl,
+                url: task.pageKey,
                 productId: task.productId,
                 pageKey: task.pageKey,
                 siteKey: task.siteKey,
@@ -923,6 +1025,13 @@ function App() {
               await handleTaskStatusChange(task, status);
             } catch (err) {
               setTaskError(err instanceof Error ? err.message : '更新任务状态失败');
+            }
+          }}
+          onPageFieldChange={async (task, field, value) => {
+            try {
+              await handleTaskPageFieldChange(task, field, value);
+            } catch (err) {
+              setTaskError(err instanceof Error ? err.message : '更新页面字段失败');
             }
           }}
         />

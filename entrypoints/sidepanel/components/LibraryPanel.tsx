@@ -6,6 +6,8 @@ interface LibraryPanelProps {
   onStatusChange: (record: PageRecord, newStatus: PageStatus) => Promise<{ syncState: 'synced' | 'pending'; updatedRecord?: PageRecord | null }>;
 }
 
+const META_BADGE_CLASS = 'badge badge-sm badge-outline border-base-content/30 text-base-content/75';
+
 export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) {
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -100,7 +102,7 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
     if (snapshot) {
       const updatedRecords = snapshot.records.map(r =>
         r.pageKey === record.pageKey && r.siteKey === record.siteKey
-          ? { ...r, status: newStatus, version: record.version + 1, updatedAt: optimisticUpdatedAt, syncState: 'pending' as const }
+          ? { ...r, status: newStatus, updatedAt: optimisticUpdatedAt, syncState: 'pending' as const }
           : r
       );
       setSnapshot({ ...snapshot, records: updatedRecords });
@@ -114,7 +116,6 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
             ? {
                 ...r,
                 status: result.updatedRecord?.status ?? newStatus,
-                version: result.updatedRecord?.version ?? record.version + 1,
                 updatedAt: result.updatedRecord?.updatedAt ?? optimisticUpdatedAt,
                 syncState: result.syncState,
               }
@@ -209,7 +210,15 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
 
       <div className="space-y-2" data-testid="library-list">
         {filteredRecords.map(record => (
-          <div key={`${record.siteKey}-${record.pageKey}`} className="card bg-base-200">
+          <div
+            key={`${record.siteKey}-${record.pageKey}`}
+            className={`card relative overflow-hidden border ${record.status === 'done' ? 'border-success bg-success/10' : 'border-transparent bg-base-200'}`}
+          >
+            {record.status === 'done' && (
+              <span className="absolute right-0 top-0 flex h-6 w-6 items-start justify-end rounded-bl-xl bg-success text-success-content">
+                <span className="pr-1 pt-0.5 text-xs font-bold">✓</span>
+              </span>
+            )}
             <div className="card-body p-4">
               {(() => {
                 const recordKey = `${record.siteKey}-${record.pageKey}`;
@@ -220,19 +229,25 @@ export function LibraryPanel({ onOpenPage, onStatusChange }: LibraryPanelProps) 
                   <>
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
-                        <h3 className="font-semibold">{record.title || record.canonicalUrl}</h3>
+                        <h3 className="font-semibold truncate" title={record.pageKey}>{record.pageKey}</h3>
                         <p className="text-sm text-base-content/70">{record.siteKey}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <span className={META_BADGE_CLASS}>{record.type}</span>
+                          <span className={META_BADGE_CLASS}>{record.format}</span>
+                          {record.category && <span className={META_BADGE_CLASS}>{record.category}</span>}
+                          {record.country && <span className={META_BADGE_CLASS}>{record.country}</span>}
+                          {record.dofollow && <span className={META_BADGE_CLASS}>Dofollow</span>}
+                          {record.loginRequired && <span className="badge badge-sm badge-warning">需登录</span>}
+                          {record.approvalRequired && <span className="badge badge-sm badge-warning">需审核</span>}
+                          {record.disabled && <span className={META_BADGE_CLASS}>已禁用</span>}
+                        </div>
                       </div>
                       <div className="flex gap-2 items-center">
-                        <span className={`badge ${
-                          record.status === 'done' ? 'badge-success' :
-                          record.status === 'invalid' ? 'badge-error' :
-                          'badge-warning'
-                        }`}>
-                          {record.status === 'done' ? '已完成' :
-                           record.status === 'invalid' ? '无效' :
-                           '待处理'}
-                        </span>
+                        {record.status !== 'done' && (
+                          <span className={`badge ${record.status === 'invalid' ? 'badge-error' : 'badge-warning'}`}>
+                            {record.status === 'invalid' ? '无效' : '待处理'}
+                          </span>
+                        )}
                         {record.syncState && (
                           <span className={`badge badge-sm ${
                             record.syncState === 'synced' ? 'badge-success' :

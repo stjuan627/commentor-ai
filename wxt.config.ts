@@ -29,6 +29,7 @@ export default defineConfig({
     host_permissions: browser === 'chrome' ? [
       "https://www.googleapis.com/*",
       "https://sheets.googleapis.com/*",
+      "https://open.feishu.cn/*",
     ] : [],
     "options_ui": {
       "page": "options.html",

@@ -7,7 +7,7 @@ import type {
 } from '../types';
 import { getProducts } from './products';
 import { getProductStatuses, saveProductStatuses } from './productMatrix';
-import { upsertProductStatus } from './sheets';
+import { upsertDatasourceProductStatus } from './datasource';
 
 const MAX_RETRY_COUNT = 3;
 const RETRY_DELAYS = [1000, 5000, 15000];
@@ -62,7 +62,7 @@ export async function flushSyncQueue(): Promise<void> {
     }
 
     try {
-      await upsertProductStatus(config, product, {
+      await upsertDatasourceProductStatus(config, product, {
         id: item.id,
         productId: item.productId,
         pageKey: item.pageKey,

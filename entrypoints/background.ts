@@ -10,13 +10,24 @@ import {
   saveProductStatuses,
   saveWebPageSnapshot,
 } from '../src/services/productMatrix';
-import { fetchProductStatuses, fetchWebPages } from '../src/services/sheets';
 import { flushSyncQueue, schedulePeriodicSync } from '../src/services/sync';
+import {
+  connectDatasource,
+  disconnectDatasource,
+  ensureDatasourceSchema,
+  fetchDatasourceProductStatuses,
+  fetchDatasourceWebPages,
+  updateDatasourceWebPageBooleanField,
+  validateDatasource,
+} from '../src/services/datasource';
+import { getDatasourceAuthState, getFeishuRedirectUri } from '../src/services/feishuAuth';
 import type {
   DatasourceConfig,
   ProductLibrarySnapshot,
   ProductSyncQueueItem,
+  WebPageBooleanField,
   WebPageRecord,
+  WebPageSnapshot,
 } from '../src/types';
 
 // chrome.debugger API 类型声明（Chrome 扩展特有，不在 webextension-polyfill 中）
@@ -27,6 +38,34 @@ interface ChromeDebuggerAPI {
   sendCommand(target: ChromeDebuggee, method: string, params?: object): Promise<unknown>;
 }
 declare const chrome: { debugger: ChromeDebuggerAPI };
+
+function updateWebPageSnapshotField<K extends WebPageBooleanField>(
+  snapshot: WebPageSnapshot | null,
+  pageKey: string,
+  field: K,
+  value: WebPageRecord[K],
+): WebPageSnapshot | null {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    records: snapshot.records.map((record) => (
+      record.pageKey === pageKey
+        ? { ...record, [field]: value }
+        : record
+    )),
+  };
+}
+
+function updateWebPageSnapshotDisabled(
+  snapshot: WebPageSnapshot | null,
+  pageKey: string,
+  disabled: boolean,
+): WebPageSnapshot | null {
+  return updateWebPageSnapshotField(snapshot, pageKey, 'disabled', disabled);
+}
 
 // WXT browser 类型扩展（scripting / webNavigation / tabs.sendMessage frameId 未在最小类型中声明）
 interface FrameInfo { frameId: number; url: string }
@@ -299,51 +338,96 @@ export default defineBackground(() => {
       return true;
     }
 
-    if (message.action === 'authConnect') {
+    if (message.action === 'datasourceValidate') {
       (async () => {
         try {
-          const supported = await authService.isAuthSupported();
-          if (!supported) {
-            sendResponse({ success: false, error: 'Auth not supported in this browser' });
+          const config = message.config as DatasourceConfig | undefined;
+          if (!config) {
+            sendResponse({ success: false, error: 'Missing datasource config' });
             return;
           }
 
-          await authService.acquireToken(true);
-          const state = await authService.getAuthState();
-          sendResponse({ success: true, state });
+          const report = await validateDatasource(config);
+          sendResponse({ success: true, report });
         } catch (error: unknown) {
-          console.error('Auth connect failed:', error);
-          const state = await authService.getAuthState();
-          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error', state });
-        }
-      })();
-      return true;
-    }
-
-    if (message.action === 'authDisconnect') {
-      (async () => {
-        try {
-          await authService.revokeToken();
-          const state = await authService.getAuthState();
-          sendResponse({ success: true, state });
-        } catch (error: unknown) {
-          console.error('Auth disconnect failed:', error);
+          console.error('Datasource validate failed:', error);
           sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();
       return true;
     }
 
-    if (message.action === 'authGetState') {
+    if (message.action === 'datasourceEnsureSchema') {
       (async () => {
         try {
-          const state = await authService.getAuthState();
-          sendResponse({ success: true, state });
+          const config = message.config as DatasourceConfig | undefined;
+          if (!config) {
+            sendResponse({ success: false, error: 'Missing datasource config' });
+            return;
+          }
+
+          const report = await ensureDatasourceSchema(config);
+          sendResponse({ success: true, report });
         } catch (error: unknown) {
-          console.error('Get auth state failed:', error);
+          console.error('Datasource ensure schema failed:', error);
           sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();
+      return true;
+    }
+
+    if (message.action === 'datasourceConnect') {
+      (async () => {
+        try {
+          const config = message.config as DatasourceConfig | undefined;
+          if (!config) {
+            sendResponse({ success: false, error: 'Missing datasource config' });
+            return;
+          }
+
+          await connectDatasource(config);
+          sendResponse({ success: true, state: await getDatasourceAuthState() });
+        } catch (error: unknown) {
+          console.error('Datasource connect failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error', state: await getDatasourceAuthState() });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'datasourceDisconnect') {
+      (async () => {
+        try {
+          const config = message.config as DatasourceConfig | undefined;
+          if (!config) {
+            sendResponse({ success: false, error: 'Missing datasource config' });
+            return;
+          }
+
+          await disconnectDatasource(config);
+          sendResponse({ success: true, state: await getDatasourceAuthState() });
+        } catch (error: unknown) {
+          console.error('Datasource disconnect failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error', state: await getDatasourceAuthState() });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'datasourceGetAuthState') {
+      (async () => {
+        try {
+          sendResponse({ success: true, state: await getDatasourceAuthState() });
+        } catch (error: unknown) {
+          console.error('Datasource auth state failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'datasourceGetRedirectUri') {
+      sendResponse({ success: true, redirectUri: getFeishuRedirectUri() });
       return true;
     }
 
@@ -379,10 +463,10 @@ export default defineBackground(() => {
           }
 
           const products = await getProducts();
-          const webPages = await fetchWebPages(config);
+          const webPages = await fetchDatasourceWebPages(config);
           const currentStatuses = await getProductStatuses();
           const remoteStatusesEntries = await Promise.all(
-            products.map(async (product) => [product.id, await fetchProductStatuses(config, product)] as const),
+            products.map(async (product) => [product.id, await fetchDatasourceProductStatuses(config, product)] as const),
           );
           const remoteStatuses = Object.fromEntries(remoteStatusesEntries);
           const mergedStatuses = mergeProductStatuses(currentStatuses, remoteStatuses);
@@ -469,6 +553,7 @@ export default defineBackground(() => {
             comment ?? existing?.comment,
           );
           const nextStatuses = { ...statuses, [productId]: [...(statuses[productId] ?? []).filter((item) => item.pageKey !== pageKey), nextRecord] };
+          const nextWebPageSnapshot = updateWebPageSnapshotDisabled(webPageSnapshot, pageKey, status === 'invalid');
           const queue: ProductSyncQueueItem[] = queueResult.syncQueue || [];
           const nextQueue = [
             ...queue.filter((item) => item.id !== nextRecord.id),
@@ -487,6 +572,9 @@ export default defineBackground(() => {
           ];
 
           await saveProductStatuses(nextStatuses);
+          if (nextWebPageSnapshot) {
+            await saveWebPageSnapshot(nextWebPageSnapshot);
+          }
           await browser.storage.local.set({ syncQueue: nextQueue, activeProductId: productId });
           await flushSyncQueue();
 
@@ -495,6 +583,51 @@ export default defineBackground(() => {
           sendResponse({ success: true, record: updatedRecord });
         } catch (error: unknown) {
           console.error('Product task update failed:', error);
+          sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      })();
+      return true;
+    }
+
+    if (message.action === 'productTaskPageFieldUpdate') {
+      (async () => {
+        try {
+          const { pageKey, field, value } = message as {
+            pageKey: string;
+            field: WebPageBooleanField;
+            value: boolean;
+          };
+          const result = await browser.storage.local.get('datasourceConfig');
+          const config = result.datasourceConfig as DatasourceConfig | undefined;
+
+          if (!config || !config.connected) {
+            sendResponse({ success: false, error: 'Datasource not configured' });
+            return;
+          }
+
+          const webPageSnapshot = await getWebPageSnapshot();
+          const page = webPageSnapshot?.records.find((item: WebPageRecord) => item.pageKey === pageKey);
+
+          if (!page) {
+            sendResponse({ success: false, error: 'Page not found' });
+            return;
+          }
+
+          if (field !== 'disabled' && page[field] !== null) {
+            sendResponse({ success: false, error: 'Field is already set' });
+            return;
+          }
+
+          await updateDatasourceWebPageBooleanField(config, pageKey, field, value);
+          const nextWebPageSnapshot = updateWebPageSnapshotField(webPageSnapshot, pageKey, field, value);
+          if (nextWebPageSnapshot) {
+            await saveWebPageSnapshot(nextWebPageSnapshot);
+          }
+
+          const updatedPage = nextWebPageSnapshot?.records.find((item) => item.pageKey === pageKey) ?? { ...page, [field]: value };
+          sendResponse({ success: true, page: updatedPage });
+        } catch (error: unknown) {
+          console.error('Product task page field update failed:', error);
           sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
         }
       })();

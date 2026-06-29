@@ -1,12 +1,82 @@
 import type { KeywordItem } from './keyword';
 
-export interface DatasourceConfig {
+export type DatasourceProvider = 'google-sheets' | 'feishu-bitable';
+
+export interface GoogleSheetsDatasourceConfig {
   provider: 'google-sheets';
   spreadsheetId: string;
   sheetName: string;
   connected: boolean;
   connectedAt?: string;
   webPageSheetName?: string;
+}
+
+export type FeishuAuthMode = 'tenant' | 'oauth';
+
+export type FeishuBitableFieldKey =
+  | 'site_key'
+  | 'page_key'
+  | 'category'
+  | 'country'
+  | 'dofollow'
+  | 'login_required'
+  | 'approval_required'
+  | 'type'
+  | 'format'
+  | 'disabled'
+  | 'updated_at'
+  | 'product_id'
+  | 'status'
+  | 'comment'
+  | 'version';
+
+export interface FeishuBitableFieldMapping {
+  webPages?: Partial<Record<FeishuBitableFieldKey, string>>;
+  productStatuses?: Partial<Record<FeishuBitableFieldKey, string>>;
+}
+
+export interface FeishuBitableDatasourceConfig {
+  provider: 'feishu-bitable';
+  authMode: FeishuAuthMode;
+  appId?: string;
+  appSecret?: string;
+  appToken: string;
+  webPageTableId: string;
+  productStatusTableId: string;
+  connected: boolean;
+  connectedAt?: string;
+  redirectUri?: string;
+  userAccessToken?: string;
+  refreshToken?: string;
+  tokenExpiresAt?: number;
+  fieldMapping?: FeishuBitableFieldMapping;
+}
+
+export type DatasourceConfig = GoogleSheetsDatasourceConfig | FeishuBitableDatasourceConfig;
+
+export interface DatasourceValidationIssue {
+  type: 'missing-table' | 'missing-field' | 'incompatible-field' | 'auth' | 'permission' | 'api' | 'config';
+  tableId?: string;
+  tableName?: string;
+  fieldName?: string;
+  expected?: string;
+  actual?: string;
+  message: string;
+}
+
+export interface DatasourceValidationReport {
+  provider: DatasourceProvider;
+  ok: boolean;
+  canAutoFix: boolean;
+  checkedAt: string;
+  issues: DatasourceValidationIssue[];
+  warnings: DatasourceValidationIssue[];
+  missingFields?: Record<string, string[]>;
+}
+
+export interface DatasourceAuthState extends AuthState {
+  provider?: DatasourceProvider;
+  mode?: FeishuAuthMode | 'google-oauth';
 }
 
 export interface AuthState {
@@ -26,13 +96,21 @@ export interface Product {
   updatedAt?: string;
 }
 
+export type WebPageType = 'profile' | 'comment' | 'post';
+export type WebPageBooleanField = 'loginRequired' | 'approvalRequired' | 'disabled';
+export type WebPageFormat = 'html' | 'markdown' | 'bbcode' | 'others';
+
 export interface WebPageRecord {
   pageKey: string;
   siteKey: string;
-  sourceUrl: string;
-  canonicalUrl: string;
-  title: string;
-  version: number;
+  category: string;
+  country: string;
+  dofollow: boolean;
+  loginRequired: boolean | null;
+  approvalRequired: boolean | null;
+  type: WebPageType;
+  format: WebPageFormat;
+  disabled: boolean;
   updatedAt: string;
 }
 

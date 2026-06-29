@@ -1,8 +1,11 @@
 import type {
-  DatasourceConfig,
+  GoogleSheetsDatasourceConfig,
   Product,
   ProductPageStatusRecord,
+  WebPageBooleanField,
+  WebPageFormat,
   WebPageRecord,
+  WebPageType,
 } from '../types';
 import {
   buildProductSheetName,
@@ -27,10 +30,14 @@ interface SheetSchema {
 const WEB_PAGE_COLUMNS = [
   'site_key',
   'page_key',
-  'source_url',
-  'canonical_url',
-  'title',
-  'version',
+  'category',
+  'country',
+  'dofollow',
+  'login_required',
+  'approval_required',
+  'type',
+  'format',
+  'disabled',
   'updated_at',
 ] as const;
 
@@ -52,7 +59,7 @@ async function getToken(): Promise<string> {
   return token;
 }
 
-function getWebPageSheetName(config: DatasourceConfig): string {
+function getWebPageSheetName(config: GoogleSheetsDatasourceConfig): string {
   return config.webPageSheetName || config.sheetName;
 }
 
@@ -70,7 +77,7 @@ async function sheetsFetch(url: string, init?: RequestInit): Promise<Response> {
   return response;
 }
 
-async function getSpreadsheetMetadata(config: DatasourceConfig): Promise<SpreadsheetMetadata> {
+async function getSpreadsheetMetadata(config: GoogleSheetsDatasourceConfig): Promise<SpreadsheetMetadata> {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheetId}`;
   const response = await sheetsFetch(url);
 
@@ -81,12 +88,12 @@ async function getSpreadsheetMetadata(config: DatasourceConfig): Promise<Spreads
   return response.json() as Promise<SpreadsheetMetadata>;
 }
 
-async function sheetExists(config: DatasourceConfig, sheetName: string): Promise<boolean> {
+async function sheetExists(config: GoogleSheetsDatasourceConfig, sheetName: string): Promise<boolean> {
   const metadata = await getSpreadsheetMetadata(config);
   return (metadata.sheets ?? []).some((sheet) => sheet.properties?.title === sheetName);
 }
 
-async function ensureSheet(config: DatasourceConfig, sheetName: string): Promise<void> {
+async function ensureSheet(config: GoogleSheetsDatasourceConfig, sheetName: string): Promise<void> {
   const exists = await sheetExists(config, sheetName);
   if (exists) {
     return;
@@ -114,7 +121,7 @@ async function ensureSheet(config: DatasourceConfig, sheetName: string): Promise
 }
 
 async function getSheetValues(
-  config: DatasourceConfig,
+  config: GoogleSheetsDatasourceConfig,
   range: string,
 ): Promise<string[][]> {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheetId}/values/${encodeURIComponent(range)}`;
@@ -129,7 +136,7 @@ async function getSheetValues(
 }
 
 async function updateSheetValues(
-  config: DatasourceConfig,
+  config: GoogleSheetsDatasourceConfig,
   range: string,
   values: unknown[][],
 ): Promise<void> {
@@ -144,8 +151,59 @@ async function updateSheetValues(
   }
 }
 
+function normalizeNullableBoolean(value: string | undefined): boolean | null {
+  if (value == null || value.trim() === '') {
+    return null;
+  }
+  return normalizeBoolean(value);
+}
+
+function getWebPageColumnRange(column: (typeof WEB_PAGE_COLUMNS)[number], rowNumber: number): string {
+  const columnIndex = WEB_PAGE_COLUMNS.indexOf(column);
+  const columnLetter = String.fromCharCode(65 + columnIndex);
+  return `${columnLetter}${rowNumber}:${columnLetter}${rowNumber}`;
+}
+
+async function updateWebPageField(
+  config: GoogleSheetsDatasourceConfig,
+  pageKey: string,
+  column: 'login_required' | 'approval_required' | 'disabled',
+  value: boolean,
+): Promise<void> {
+  const sheetName = getWebPageSheetName(config);
+  await ensureWebPageHeaderRow(config, sheetName, { updateMismatchedHeader: false });
+  const values = await getSheetValues(config, `${sheetName}!1:10000`);
+  const headers = values[0] || [];
+  const schema = buildWebPageSchema(headers);
+  const rows = values.slice(1);
+  const rowIndex = rows.findIndex((row) => normalizePageKey(row[schema.page_key] || '') === pageKey);
+
+  if (rowIndex < 0) {
+    throw new Error(`Page not found in web pages sheet: ${pageKey}`);
+  }
+
+  const targetRow = rowIndex + 2;
+  const range = getWebPageColumnRange(column, targetRow);
+  await updateSheetValues(config, `${sheetName}!${range}`, [[value ? '1' : '0']]);
+}
+
+async function updateWebPageBooleanField(
+  config: GoogleSheetsDatasourceConfig,
+  pageKey: string,
+  field: WebPageBooleanField,
+  value: boolean,
+): Promise<void> {
+  const columnByField: Record<WebPageBooleanField, 'login_required' | 'approval_required' | 'disabled'> = {
+    loginRequired: 'login_required',
+    approvalRequired: 'approval_required',
+    disabled: 'disabled',
+  };
+
+  await updateWebPageField(config, pageKey, columnByField[field], value);
+}
+
 async function appendSheetValues(
-  config: DatasourceConfig,
+  config: GoogleSheetsDatasourceConfig,
   range: string,
   values: unknown[][],
 ): Promise<void> {
@@ -173,50 +231,111 @@ function buildSchema(headers: string[], requiredColumns: readonly string[]): She
 }
 
 async function ensureHeaderRow(
-  config: DatasourceConfig,
+  config: GoogleSheetsDatasourceConfig,
   sheetName: string,
   columns: readonly string[],
+  options: { updateMismatchedHeader?: boolean } = { updateMismatchedHeader: true },
 ): Promise<void> {
   const values = await getSheetValues(config, `${sheetName}!1:1`);
   const headers = values[0] || [];
   const matches = columns.every((column, index) => headers[index] === column);
 
-  if (!matches) {
-    await updateSheetValues(config, `${sheetName}!1:1`, [Array.from(columns)]);
+  if (matches) {
+    return;
   }
+
+  if (headers.length === 0 || options.updateMismatchedHeader) {
+    await updateSheetValues(config, `${sheetName}!1:1`, [Array.from(columns)]);
+    return;
+  }
+
+  throw new Error(`网页表表头不匹配，请将 ${sheetName} 第一行更新为：${columns.join(', ')}`);
 }
 
-async function ensureProductSheet(config: DatasourceConfig, product: Product): Promise<string> {
+async function ensureWebPageHeaderRow(
+  config: GoogleSheetsDatasourceConfig,
+  sheetName: string,
+  options: { updateMismatchedHeader?: boolean } = { updateMismatchedHeader: true },
+): Promise<void> {
+  const values = await getSheetValues(config, `${sheetName}!1:1`);
+  const headers = values[0] || [];
+  const matchesCurrent = WEB_PAGE_COLUMNS.every((column, index) => headers[index] === column);
+
+  if (matchesCurrent) {
+    return;
+  }
+
+  if (headers.length === 0 || options.updateMismatchedHeader) {
+    await updateSheetValues(config, `${sheetName}!1:1`, [Array.from(WEB_PAGE_COLUMNS)]);
+    return;
+  }
+
+  throw new Error(`网页表表头不匹配，请将 ${sheetName} 第一行更新为：${WEB_PAGE_COLUMNS.join(', ')}`);
+}
+
+function buildWebPageSchema(headers: string[]): SheetSchema {
+  return buildSchema(headers, WEB_PAGE_COLUMNS);
+}
+
+async function ensureProductSheet(config: GoogleSheetsDatasourceConfig, product: Product): Promise<string> {
   const sheetName = buildProductSheetName(product);
   await ensureSheet(config, sheetName);
   await ensureHeaderRow(config, sheetName, PRODUCT_STATUS_COLUMNS);
   return sheetName;
 }
 
-export async function fetchWebPages(config: DatasourceConfig): Promise<WebPageRecord[]> {
+function normalizeBoolean(value: string | undefined): boolean {
+  const normalized = (value ?? '').trim().toLowerCase();
+  return ['true', '1', 'yes', 'y', '是', '✓', 'checked'].includes(normalized);
+}
+
+function normalizeWebPageType(value: string | undefined): WebPageType {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === 'profile' || normalized === 'post') {
+    return normalized;
+  }
+  return 'comment';
+}
+
+function normalizeWebPageFormat(value: string | undefined): WebPageFormat {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === 'html' || normalized === 'markdown' || normalized === 'bbcode' || normalized === 'others') {
+    return normalized;
+  }
+  if (normalized === 'mardown') {
+    return 'markdown';
+  }
+  return 'others';
+}
+
+export async function fetchWebPages(config: GoogleSheetsDatasourceConfig): Promise<WebPageRecord[]> {
   const sheetName = getWebPageSheetName(config);
-  await ensureHeaderRow(config, sheetName, WEB_PAGE_COLUMNS);
+  await ensureWebPageHeaderRow(config, sheetName, { updateMismatchedHeader: false });
   const values = await getSheetValues(config, `${sheetName}!1:10000`);
   const headers = values[0] || [];
-  const schema = buildSchema(headers, WEB_PAGE_COLUMNS);
+  const schema = buildWebPageSchema(headers);
 
   return values.slice(1).filter((row) => row.length > 0).map((row) => {
-    const sourceUrl = row[schema.source_url] || '';
-    const canonicalUrl = row[schema.canonical_url] || sourceUrl;
+    const rawPageKey = row[schema.page_key] || '';
+    const normalizedPageKey = normalizePageKey(rawPageKey);
     return {
-      pageKey: normalizePageKey(row[schema.page_key] || canonicalUrl),
-      siteKey: normalizeSiteKey(row[schema.site_key] || sourceUrl),
-      sourceUrl,
-      canonicalUrl,
-      title: row[schema.title] || canonicalUrl,
-      version: Number.parseInt(row[schema.version] || '1', 10),
+      pageKey: normalizedPageKey,
+      siteKey: normalizeSiteKey(row[schema.site_key] || normalizedPageKey),
+      category: row[schema.category] || '',
+      country: row[schema.country] || '',
+      dofollow: normalizeBoolean(row[schema.dofollow]),
+      loginRequired: normalizeNullableBoolean(row[schema.login_required]),
+      approvalRequired: normalizeNullableBoolean(row[schema.approval_required]),
+      type: normalizeWebPageType(row[schema.type]),
+      format: normalizeWebPageFormat(row[schema.format]),
+      disabled: normalizeBoolean(row[schema.disabled]),
       updatedAt: row[schema.updated_at] || new Date().toISOString(),
     };
   });
 }
 
 export async function fetchProductStatuses(
-  config: DatasourceConfig,
+  config: GoogleSheetsDatasourceConfig,
   product: Product,
 ): Promise<ProductPageStatusRecord[]> {
   const sheetName = buildProductSheetName(product);
@@ -248,8 +367,17 @@ export async function fetchProductStatuses(
   });
 }
 
+export async function updateGoogleWebPageBooleanField(
+  config: GoogleSheetsDatasourceConfig,
+  pageKey: string,
+  field: WebPageBooleanField,
+  value: boolean,
+): Promise<void> {
+  await updateWebPageBooleanField(config, pageKey, field, value);
+}
+
 export async function upsertProductStatus(
-  config: DatasourceConfig,
+  config: GoogleSheetsDatasourceConfig,
   product: Product,
   record: ProductPageStatusRecord,
 ): Promise<void> {
@@ -272,8 +400,9 @@ export async function upsertProductStatus(
   if (rowIndex >= 0) {
     const targetRow = rowIndex + 2;
     await updateSheetValues(config, `${sheetName}!A${targetRow}:F${targetRow}`, [rowValues]);
-    return;
+  } else {
+    await appendSheetValues(config, `${sheetName}!A:F`, [rowValues]);
   }
 
-  await appendSheetValues(config, `${sheetName}!A:F`, [rowValues]);
+  await updateWebPageBooleanField(config, record.pageKey, 'disabled', record.status === 'invalid');
 }
