@@ -7,6 +7,7 @@ import type {
   Product,
   ProductPageStatusRecord,
   WebPageBooleanField,
+  WebPageEditableField,
   WebPageFormat,
   WebPageRecord,
   WebPageType,
@@ -377,7 +378,7 @@ function toNullableBoolean(value: unknown): boolean | null {
 
 function normalizeWebPageType(value: unknown): WebPageType {
   const normalized = toText(value).trim().toLowerCase();
-  if (normalized === 'profile' || normalized === 'post') {
+  if (normalized === 'profile' || normalized === 'post' || normalized === 'bbs') {
     return normalized;
   }
   return 'comment';
@@ -415,13 +416,22 @@ async function updateWebPageBooleanField(
   config: FeishuBitableDatasourceConfig,
   pageKey: string,
   field: WebPageBooleanField,
-  value: boolean,
+  value: boolean | null,
 ): Promise<void> {
   const fieldNameByKey: Record<WebPageBooleanField, 'login_required' | 'approval_required' | 'disabled'> = {
     loginRequired: 'login_required',
     approvalRequired: 'approval_required',
     disabled: 'disabled',
   };
+  await updateWebPageField(config, pageKey, fieldNameByKey[field], value == null ? '' : value ? '1' : '0');
+}
+
+async function updateWebPageField(
+  config: FeishuBitableDatasourceConfig,
+  pageKey: string,
+  fieldName: 'login_required' | 'approval_required' | 'disabled' | 'type' | 'format',
+  value: string,
+): Promise<void> {
   const records = await listRecords(config, config.webPageTableId);
   const existing = records.find((item) => (
     normalizePageKey(toText(readField(item.fields, 'page_key'))) === pageKey
@@ -438,7 +448,7 @@ async function updateWebPageBooleanField(
         {
           record_id: existing.record_id,
           fields: {
-            [fieldNameByKey[field]]: value ? '1' : '0',
+            [fieldName]: value,
           },
         },
       ],
@@ -572,9 +582,23 @@ export async function updateFeishuWebPageBooleanField(
   config: FeishuBitableDatasourceConfig,
   pageKey: string,
   field: WebPageBooleanField,
-  value: boolean,
+  value: boolean | null,
 ): Promise<void> {
   await updateWebPageBooleanField(config, pageKey, field, value);
+}
+
+export async function updateFeishuWebPageField(
+  config: FeishuBitableDatasourceConfig,
+  pageKey: string,
+  field: WebPageEditableField,
+  value: boolean | null | WebPageType | WebPageFormat,
+): Promise<void> {
+  if (field === 'type' || field === 'format') {
+    await updateWebPageField(config, pageKey, field, String(value));
+    return;
+  }
+
+  await updateWebPageBooleanField(config, pageKey, field, value as boolean | null);
 }
 
 export async function upsertFeishuProductStatus(

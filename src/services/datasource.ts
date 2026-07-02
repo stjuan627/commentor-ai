@@ -4,11 +4,15 @@ import type {
   Product,
   ProductPageStatusRecord,
   WebPageBooleanField,
+  WebPageEditableField,
+  WebPageFormat,
   WebPageRecord,
+  WebPageType,
 } from '../types';
 import {
   fetchWebPages as fetchGoogleWebPages,
   fetchProductStatuses as fetchGoogleProductStatuses,
+  updateGoogleWebPageField,
   updateGoogleWebPageBooleanField,
   upsertProductStatus as upsertGoogleProductStatus,
 } from './sheets';
@@ -16,6 +20,7 @@ import {
   ensureFeishuDatasource,
   fetchFeishuProductStatuses,
   fetchFeishuWebPages,
+  updateFeishuWebPageField,
   updateFeishuWebPageBooleanField,
   upsertFeishuProductStatus,
   validateFeishuDatasource,
@@ -65,13 +70,29 @@ export async function updateDatasourceWebPageBooleanField(
   config: DatasourceConfig,
   pageKey: string,
   field: WebPageBooleanField,
-  value: boolean,
+  value: boolean | null,
 ): Promise<void> {
   switch (config.provider) {
     case 'google-sheets':
       return updateGoogleWebPageBooleanField(config, pageKey, field, value);
     case 'feishu-bitable':
       return updateFeishuWebPageBooleanField(config, pageKey, field, value);
+    default:
+      throw new Error(`Unsupported datasource provider: ${(config as { provider?: string }).provider ?? 'unknown'}`);
+  }
+}
+
+export async function updateDatasourceWebPageField(
+  config: DatasourceConfig,
+  pageKey: string,
+  field: WebPageEditableField,
+  value: boolean | null | WebPageType | WebPageFormat,
+): Promise<void> {
+  switch (config.provider) {
+    case 'google-sheets':
+      return updateGoogleWebPageField(config, pageKey, field, value);
+    case 'feishu-bitable':
+      return updateFeishuWebPageField(config, pageKey, field, value);
     default:
       throw new Error(`Unsupported datasource provider: ${(config as { provider?: string }).provider ?? 'unknown'}`);
   }

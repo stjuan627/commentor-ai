@@ -96,9 +96,10 @@ export interface Product {
   updatedAt?: string;
 }
 
-export type WebPageType = 'profile' | 'comment' | 'post';
+export type WebPageType = 'profile' | 'comment' | 'post' | 'bbs';
 export type WebPageBooleanField = 'loginRequired' | 'approvalRequired' | 'disabled';
 export type WebPageFormat = 'html' | 'markdown' | 'bbcode' | 'others';
+export type WebPageEditableField = WebPageBooleanField | 'type' | 'format';
 
 export interface WebPageRecord {
   pageKey: string;

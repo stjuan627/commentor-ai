@@ -3,6 +3,7 @@ import type {
   Product,
   ProductPageStatusRecord,
   WebPageBooleanField,
+  WebPageEditableField,
   WebPageFormat,
   WebPageRecord,
   WebPageType,
@@ -167,8 +168,8 @@ function getWebPageColumnRange(column: (typeof WEB_PAGE_COLUMNS)[number], rowNum
 async function updateWebPageField(
   config: GoogleSheetsDatasourceConfig,
   pageKey: string,
-  column: 'login_required' | 'approval_required' | 'disabled',
-  value: boolean,
+  column: 'login_required' | 'approval_required' | 'disabled' | 'type' | 'format',
+  value: string,
 ): Promise<void> {
   const sheetName = getWebPageSheetName(config);
   await ensureWebPageHeaderRow(config, sheetName, { updateMismatchedHeader: false });
@@ -184,14 +185,14 @@ async function updateWebPageField(
 
   const targetRow = rowIndex + 2;
   const range = getWebPageColumnRange(column, targetRow);
-  await updateSheetValues(config, `${sheetName}!${range}`, [[value ? '1' : '0']]);
+  await updateSheetValues(config, `${sheetName}!${range}`, [[value]]);
 }
 
 async function updateWebPageBooleanField(
   config: GoogleSheetsDatasourceConfig,
   pageKey: string,
   field: WebPageBooleanField,
-  value: boolean,
+  value: boolean | null,
 ): Promise<void> {
   const columnByField: Record<WebPageBooleanField, 'login_required' | 'approval_required' | 'disabled'> = {
     loginRequired: 'login_required',
@@ -199,7 +200,16 @@ async function updateWebPageBooleanField(
     disabled: 'disabled',
   };
 
-  await updateWebPageField(config, pageKey, columnByField[field], value);
+  await updateWebPageField(config, pageKey, columnByField[field], value == null ? '' : value ? '1' : '0');
+}
+
+async function updateWebPageSelectField(
+  config: GoogleSheetsDatasourceConfig,
+  pageKey: string,
+  field: 'type' | 'format',
+  value: WebPageType | WebPageFormat,
+): Promise<void> {
+  await updateWebPageField(config, pageKey, field, value);
 }
 
 async function appendSheetValues(
@@ -291,7 +301,7 @@ function normalizeBoolean(value: string | undefined): boolean {
 
 function normalizeWebPageType(value: string | undefined): WebPageType {
   const normalized = value?.trim().toLowerCase();
-  if (normalized === 'profile' || normalized === 'post') {
+  if (normalized === 'profile' || normalized === 'post' || normalized === 'bbs') {
     return normalized;
   }
   return 'comment';
@@ -371,9 +381,23 @@ export async function updateGoogleWebPageBooleanField(
   config: GoogleSheetsDatasourceConfig,
   pageKey: string,
   field: WebPageBooleanField,
-  value: boolean,
+  value: boolean | null,
 ): Promise<void> {
   await updateWebPageBooleanField(config, pageKey, field, value);
+}
+
+export async function updateGoogleWebPageField(
+  config: GoogleSheetsDatasourceConfig,
+  pageKey: string,
+  field: WebPageEditableField,
+  value: boolean | null | WebPageType | WebPageFormat,
+): Promise<void> {
+  if (field === 'type' || field === 'format') {
+    await updateWebPageSelectField(config, pageKey, field, value as WebPageType | WebPageFormat);
+    return;
+  }
+
+  await updateWebPageBooleanField(config, pageKey, field, value as boolean | null);
 }
 
 export async function upsertProductStatus(

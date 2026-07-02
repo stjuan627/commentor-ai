@@ -17,7 +17,7 @@ import {
   ensureDatasourceSchema,
   fetchDatasourceProductStatuses,
   fetchDatasourceWebPages,
-  updateDatasourceWebPageBooleanField,
+  updateDatasourceWebPageField,
   validateDatasource,
 } from '../src/services/datasource';
 import { getDatasourceAuthState, getFeishuRedirectUri } from '../src/services/feishuAuth';
@@ -25,9 +25,11 @@ import type {
   DatasourceConfig,
   ProductLibrarySnapshot,
   ProductSyncQueueItem,
-  WebPageBooleanField,
+  WebPageEditableField,
+  WebPageFormat,
   WebPageRecord,
   WebPageSnapshot,
+  WebPageType,
 } from '../src/types';
 
 // chrome.debugger API 类型声明（Chrome 扩展特有，不在 webextension-polyfill 中）
@@ -39,7 +41,7 @@ interface ChromeDebuggerAPI {
 }
 declare const chrome: { debugger: ChromeDebuggerAPI };
 
-function updateWebPageSnapshotField<K extends WebPageBooleanField>(
+function updateWebPageSnapshotField<K extends WebPageEditableField>(
   snapshot: WebPageSnapshot | null,
   pageKey: string,
   field: K,
@@ -594,8 +596,8 @@ export default defineBackground(() => {
         try {
           const { pageKey, field, value } = message as {
             pageKey: string;
-            field: WebPageBooleanField;
-            value: boolean;
+            field: WebPageEditableField;
+            value: boolean | null | WebPageType | WebPageFormat;
           };
           const result = await browser.storage.local.get('datasourceConfig');
           const config = result.datasourceConfig as DatasourceConfig | undefined;
@@ -613,13 +615,13 @@ export default defineBackground(() => {
             return;
           }
 
-          if (field !== 'disabled' && page[field] !== null) {
-            sendResponse({ success: false, error: 'Field is already set' });
-            return;
-          }
-
-          await updateDatasourceWebPageBooleanField(config, pageKey, field, value);
-          const nextWebPageSnapshot = updateWebPageSnapshotField(webPageSnapshot, pageKey, field, value);
+          await updateDatasourceWebPageField(config, pageKey, field, value);
+          const nextWebPageSnapshot = updateWebPageSnapshotField(
+            webPageSnapshot,
+            pageKey,
+            field,
+            value as WebPageRecord[typeof field],
+          );
           if (nextWebPageSnapshot) {
             await saveWebPageSnapshot(nextWebPageSnapshot);
           }

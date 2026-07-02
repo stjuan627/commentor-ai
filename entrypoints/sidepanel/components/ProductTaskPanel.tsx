@@ -1,5 +1,12 @@
 import { useMemo, useState } from 'react';
-import type { Product, ProductTaskRecord, PageStatus, WebPageBooleanField } from '../../../src/types';
+import type {
+  Product,
+  ProductTaskRecord,
+  PageStatus,
+  WebPageEditableField,
+  WebPageFormat,
+  WebPageType,
+} from '../../../src/types';
 
 interface ProductTaskPanelProps {
   products: Product[];
@@ -11,7 +18,11 @@ interface ProductTaskPanelProps {
   onRefresh: () => Promise<void>;
   onOpenTask: (task: ProductTaskRecord) => Promise<void>;
   onStatusChange: (task: ProductTaskRecord, status: PageStatus) => Promise<void>;
-  onPageFieldChange: (task: ProductTaskRecord, field: WebPageBooleanField, value: boolean) => Promise<void>;
+  onPageFieldChange: (
+    task: ProductTaskRecord,
+    field: WebPageEditableField,
+    value: boolean | null | WebPageType | WebPageFormat,
+  ) => Promise<void>;
 }
 
 const STATUS_LABELS: Record<'all' | PageStatus, string> = {
@@ -23,20 +34,42 @@ const STATUS_LABELS: Record<'all' | PageStatus, string> = {
 
 const META_BADGE_CLASS = 'badge badge-sm badge-outline border-base-content/30 text-base-content/75';
 
-const TYPE_LABELS: Record<ProductTaskRecord['type'], string> = {
-  profile: 'Profile',
-  comment: 'Comment',
-  post: 'Post',
-};
+const TYPE_OPTIONS: Array<{ value: WebPageType; label: string }> = [
+  { value: 'comment', label: 'Comment' },
+  { value: 'post', label: 'Post' },
+  { value: 'bbs', label: 'BBS' },
+];
 
-const FORMAT_LABELS: Record<ProductTaskRecord['format'], string> = {
-  html: 'HTML',
-  markdown: 'Markdown',
-  bbcode: 'BBCode',
-  others: 'Others',
-};
+const FORMAT_OPTIONS: Array<{ value: WebPageFormat; label: string }> = [
+  { value: 'html', label: 'HTML' },
+  { value: 'markdown', label: 'Markdown' },
+  { value: 'bbcode', label: 'BBCode' },
+  { value: 'others', label: 'Others' },
+];
 
-type PendingTaskAction = PageStatus | 'open' | WebPageBooleanField;
+const BOOLEAN_FIELD_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: '未确认' },
+  { value: 'true', label: '需要' },
+  { value: 'false', label: '不需要' },
+];
+
+function booleanFieldToSelectValue(value: boolean | null): string {
+  if (value == null) {
+    return '';
+  }
+
+  return value ? 'true' : 'false';
+}
+
+function selectValueToBooleanField(value: string): boolean | null {
+  if (value === '') {
+    return null;
+  }
+
+  return value === 'true';
+}
+
+type PendingTaskAction = PageStatus | 'open' | WebPageEditableField;
 
 export function ProductTaskPanel({
   products,
@@ -152,22 +185,68 @@ export function ProductTaskPanel({
                         {STATUS_LABELS[task.status]}
                       </span>
                     )}
-                    <span className={META_BADGE_CLASS}>{TYPE_LABELS[task.type]}</span>
-                    <span className={META_BADGE_CLASS}>{FORMAT_LABELS[task.format]}</span>
+                    <select
+                      className="select select-bordered select-xs w-auto max-w-28"
+                      value={task.type}
+                      disabled={isBusy}
+                      onChange={async (event) => {
+                        setPendingActions((prev) => ({ ...prev, [taskKey]: 'type' }));
+                        try {
+                          await onPageFieldChange(task, 'type', event.target.value as WebPageType);
+                        } finally {
+                          setPendingActions((prev) => {
+                            const next = { ...prev };
+                            delete next[taskKey];
+                            return next;
+                          });
+                        }
+                      }}
+                      title="类型"
+                    >
+                      {task.type === 'profile' && <option value="profile">Profile</option>}
+                      {TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="select select-bordered select-xs w-auto max-w-32"
+                      value={task.format}
+                      disabled={isBusy}
+                      onChange={async (event) => {
+                        setPendingActions((prev) => ({ ...prev, [taskKey]: 'format' }));
+                        try {
+                          await onPageFieldChange(task, 'format', event.target.value as WebPageFormat);
+                        } finally {
+                          setPendingActions((prev) => {
+                            const next = { ...prev };
+                            delete next[taskKey];
+                            return next;
+                          });
+                        }
+                      }}
+                      title="格式"
+                    >
+                      {FORMAT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                     {task.category && <span className={META_BADGE_CLASS}>{task.category}</span>}
                     {task.country && <span className={META_BADGE_CLASS}>{task.country}</span>}
                     {task.dofollow && <span className={META_BADGE_CLASS}>Dofollow</span>}
-                    {task.loginRequired && <span className="badge badge-sm badge-warning">需登录</span>}
-                    {task.approvalRequired && <span className="badge badge-sm badge-warning">需审核</span>}
-                    {task.loginRequired === null && (
-                      <button
-                        type="button"
-                        className="btn btn-xs btn-outline btn-warning"
+                    <label className="flex items-center gap-1 text-xs text-base-content/70">
+                      登录
+                      <select
+                        className="select select-bordered select-xs w-auto max-w-24"
+                        value={booleanFieldToSelectValue(task.loginRequired)}
                         disabled={isBusy}
-                        onClick={async () => {
+                        onChange={async (event) => {
                           setPendingActions((prev) => ({ ...prev, [taskKey]: 'loginRequired' }));
                           try {
-                            await onPageFieldChange(task, 'loginRequired', true);
+                            await onPageFieldChange(task, 'loginRequired', selectValueToBooleanField(event.target.value));
                           } finally {
                             setPendingActions((prev) => {
                               const next = { ...prev };
@@ -176,19 +255,25 @@ export function ProductTaskPanel({
                             });
                           }
                         }}
+                        title="登录要求"
                       >
-                        {pendingAction === 'loginRequired' ? '同步中...' : '要登录'}
-                      </button>
-                    )}
-                    {task.approvalRequired === null && (
-                      <button
-                        type="button"
-                        className="btn btn-xs btn-outline btn-warning"
+                        {BOOLEAN_FIELD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-1 text-xs text-base-content/70">
+                      审核
+                      <select
+                        className="select select-bordered select-xs w-auto max-w-24"
+                        value={booleanFieldToSelectValue(task.approvalRequired)}
                         disabled={isBusy}
-                        onClick={async () => {
+                        onChange={async (event) => {
                           setPendingActions((prev) => ({ ...prev, [taskKey]: 'approvalRequired' }));
                           try {
-                            await onPageFieldChange(task, 'approvalRequired', true);
+                            await onPageFieldChange(task, 'approvalRequired', selectValueToBooleanField(event.target.value));
                           } finally {
                             setPendingActions((prev) => {
                               const next = { ...prev };
@@ -197,10 +282,15 @@ export function ProductTaskPanel({
                             });
                           }
                         }}
+                        title="审核要求"
                       >
-                        {pendingAction === 'approvalRequired' ? '同步中...' : '要审核'}
-                      </button>
-                    )}
+                        {BOOLEAN_FIELD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     {task.disabled && <span className={META_BADGE_CLASS}>已禁用</span>}
                     {task.syncState && task.syncState !== 'synced' && (
                       <span
@@ -251,6 +341,7 @@ export function ProductTaskPanel({
                           }
                         }}
                       >
+                        {pendingAction === 'done' && <span className="loading loading-spinner loading-xs"></span>}
                         {pendingAction === 'done' ? '同步中...' : '完成'}
                       </button>
                     )}
@@ -273,6 +364,7 @@ export function ProductTaskPanel({
                           }
                         }}
                       >
+                        {pendingAction === 'invalid' && <span className="loading loading-spinner loading-xs"></span>}
                         {pendingAction === 'invalid' ? '同步中...' : '无效'}
                       </button>
                     )}

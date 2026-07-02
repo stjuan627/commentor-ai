@@ -11,8 +11,10 @@ import type {
   ProductPageStatusRecord,
   ProductStatusSnapshot,
   ProductTaskRecord,
-  WebPageBooleanField,
+  WebPageEditableField,
+  WebPageFormat,
   WebPageSnapshot,
+  WebPageType,
 } from '../../src/types/library';
 import { normalizePageKey } from '../../src/types/library';
 import type { ExtractResponse, ExtractedContent } from '../../src/types/content';
@@ -22,18 +24,40 @@ import { CommentOutput, FormFieldList, ProductTaskPanel, SettingsPanel, SiteKeyw
 
 const META_BADGE_CLASS = 'badge badge-sm badge-outline border-base-content/30 text-base-content/75';
 
-const WEB_PAGE_TYPE_LABELS: Record<ProductTaskRecord['type'], string> = {
-  profile: 'Profile',
-  comment: 'Comment',
-  post: 'Post',
-};
+const WEB_PAGE_TYPE_OPTIONS: Array<{ value: WebPageType; label: string }> = [
+  { value: 'comment', label: 'Comment' },
+  { value: 'post', label: 'Post' },
+  { value: 'bbs', label: 'BBS' },
+];
 
-const WEB_PAGE_FORMAT_LABELS: Record<ProductTaskRecord['format'], string> = {
-  html: 'HTML',
-  markdown: 'Markdown',
-  bbcode: 'BBCode',
-  others: 'Others',
-};
+const WEB_PAGE_FORMAT_OPTIONS: Array<{ value: WebPageFormat; label: string }> = [
+  { value: 'html', label: 'HTML' },
+  { value: 'markdown', label: 'Markdown' },
+  { value: 'bbcode', label: 'BBCode' },
+  { value: 'others', label: 'Others' },
+];
+
+const BOOLEAN_FIELD_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: '未确认' },
+  { value: 'true', label: '需要' },
+  { value: 'false', label: '不需要' },
+];
+
+function booleanFieldToSelectValue(value: boolean | null): string {
+  if (value == null) {
+    return '';
+  }
+
+  return value ? 'true' : 'false';
+}
+
+function selectValueToBooleanField(value: string): boolean | null {
+  if (value === '') {
+    return null;
+  }
+
+  return value === 'true';
+}
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
@@ -54,6 +78,7 @@ function App() {
   const [selectedCommentTaskKey, setSelectedCommentTaskKey] = useState<string | null>(null);
   const [currentTabPageKey, setCurrentTabPageKey] = useState<string | null>(null);
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [commentTaskPendingStatus, setCommentTaskPendingStatus] = useState<PageStatus | null>(null);
   const [taskLoading, setTaskLoading] = useState(false);
   const [taskUnconfigured, setTaskUnconfigured] = useState(false);
 
@@ -96,17 +121,22 @@ function App() {
     return tasksByProduct[activeProduct.id] ?? [];
   }, [activeProduct, tasksByProduct]);
 
+  const pendingCommentTasks = useMemo(
+    () => activeProjectTasks.filter((task) => task.status === 'pending'),
+    [activeProjectTasks],
+  );
+
   const defaultActiveTask = useMemo(() => {
-    if (activeProjectTasks.length === 0) {
+    if (pendingCommentTasks.length === 0) {
       return null;
     }
 
-    return activeProjectTasks.find((task) => task.status === 'pending') ?? activeProjectTasks[0] ?? null;
-  }, [activeProjectTasks]);
+    return pendingCommentTasks[0] ?? null;
+  }, [pendingCommentTasks]);
 
   const currentCommentTask = useMemo(() => {
     const selectedTask = selectedCommentTaskKey
-      ? activeProjectTasks.find((task) => task.pageKey === selectedCommentTaskKey) ?? null
+      ? pendingCommentTasks.find((task) => task.pageKey === selectedCommentTaskKey) ?? null
       : null;
 
     if (selectedTask) {
@@ -121,20 +151,20 @@ function App() {
       && currentTabPageKey === activeTaskRecord.pageKey,
     );
 
-    if (hasLiveTaskBinding && activeTaskRecord) {
+    if (hasLiveTaskBinding && activeTaskRecord?.status === 'pending') {
       return activeTaskRecord;
     }
 
     return defaultActiveTask;
-  }, [activeProductContext, activeProductId, activeTaskRecord, activeProjectTasks, currentTabPageKey, defaultActiveTask, selectedCommentTaskKey]);
+  }, [activeProductContext, activeProductId, activeTaskRecord, currentTabPageKey, defaultActiveTask, pendingCommentTasks, selectedCommentTaskKey]);
 
   const currentCommentTaskIndex = useMemo(() => {
     if (!currentCommentTask) {
       return -1;
     }
 
-    return activeProjectTasks.findIndex((task) => task.pageKey === currentCommentTask.pageKey);
-  }, [activeProjectTasks, currentCommentTask]);
+    return pendingCommentTasks.findIndex((task) => task.pageKey === currentCommentTask.pageKey);
+  }, [pendingCommentTasks, currentCommentTask]);
 
   const refreshLlmSettings = useCallback(() => {
     browser.storage.local.get('llmSettings').then((result: { llmSettings?: LLMSettings }) => {
@@ -642,7 +672,11 @@ function App() {
     updateTaskRecord(response.record as ProductPageStatusRecord);
   };
 
-  const handleTaskPageFieldChange = async (task: ProductTaskRecord, field: WebPageBooleanField, value: boolean) => {
+  const handleTaskPageFieldChange = async (
+    task: ProductTaskRecord,
+    field: WebPageEditableField,
+    value: boolean | null | WebPageType | WebPageFormat,
+  ) => {
     setTaskError(null);
     const response = await browser.runtime.sendMessage({
       action: 'productTaskPageFieldUpdate',
@@ -834,39 +868,80 @@ function App() {
                     {currentCommentTask.pageKey}
                   </button>
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    <span className={META_BADGE_CLASS}>{WEB_PAGE_TYPE_LABELS[currentCommentTask.type]}</span>
-                    <span className={META_BADGE_CLASS}>{WEB_PAGE_FORMAT_LABELS[currentCommentTask.format]}</span>
+                    <select
+                      className="select select-bordered select-xs w-auto max-w-28"
+                      value={currentCommentTask.type}
+                      onChange={(event) => {
+                        void handleTaskPageFieldChange(currentCommentTask, 'type', event.target.value as WebPageType).catch((err) => {
+                          setError(err instanceof Error ? err.message : '更新页面字段失败');
+                        });
+                      }}
+                      title="类型"
+                    >
+                      {currentCommentTask.type === 'profile' && <option value="profile">Profile</option>}
+                      {WEB_PAGE_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="select select-bordered select-xs w-auto max-w-32"
+                      value={currentCommentTask.format}
+                      onChange={(event) => {
+                        void handleTaskPageFieldChange(currentCommentTask, 'format', event.target.value as WebPageFormat).catch((err) => {
+                          setError(err instanceof Error ? err.message : '更新页面字段失败');
+                        });
+                      }}
+                      title="格式"
+                    >
+                      {WEB_PAGE_FORMAT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                     {currentCommentTask.category && <span className={META_BADGE_CLASS}>{currentCommentTask.category}</span>}
                     {currentCommentTask.country && <span className={META_BADGE_CLASS}>{currentCommentTask.country}</span>}
                     {currentCommentTask.dofollow && <span className={META_BADGE_CLASS}>Dofollow</span>}
-                    {currentCommentTask.loginRequired && <span className="badge badge-sm badge-warning">需登录</span>}
-                    {currentCommentTask.approvalRequired && <span className="badge badge-sm badge-warning">需审核</span>}
-                    {currentCommentTask.loginRequired === null && (
-                      <button
-                        type="button"
-                        className="btn btn-xs btn-outline btn-warning"
-                        onClick={() => {
-                          void handleTaskPageFieldChange(currentCommentTask, 'loginRequired', true).catch((err) => {
+                    <label className="flex items-center gap-1 text-xs text-base-content/70">
+                      登录
+                      <select
+                        className="select select-bordered select-xs w-auto max-w-24"
+                        value={booleanFieldToSelectValue(currentCommentTask.loginRequired)}
+                        onChange={(event) => {
+                          void handleTaskPageFieldChange(currentCommentTask, 'loginRequired', selectValueToBooleanField(event.target.value)).catch((err) => {
                             setError(err instanceof Error ? err.message : '更新页面字段失败');
                           });
                         }}
+                        title="登录要求"
                       >
-                        要登录
-                      </button>
-                    )}
-                    {currentCommentTask.approvalRequired === null && (
-                      <button
-                        type="button"
-                        className="btn btn-xs btn-outline btn-warning"
-                        onClick={() => {
-                          void handleTaskPageFieldChange(currentCommentTask, 'approvalRequired', true).catch((err) => {
+                        {BOOLEAN_FIELD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-1 text-xs text-base-content/70">
+                      审核
+                      <select
+                        className="select select-bordered select-xs w-auto max-w-24"
+                        value={booleanFieldToSelectValue(currentCommentTask.approvalRequired)}
+                        onChange={(event) => {
+                          void handleTaskPageFieldChange(currentCommentTask, 'approvalRequired', selectValueToBooleanField(event.target.value)).catch((err) => {
                             setError(err instanceof Error ? err.message : '更新页面字段失败');
                           });
                         }}
+                        title="审核要求"
                       >
-                        要审核
-                      </button>
-                    )}
+                        {BOOLEAN_FIELD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     {currentCommentTask.disabled && <span className={META_BADGE_CLASS}>已禁用</span>}
                   </div>
                 </div>
@@ -879,26 +954,40 @@ function App() {
                     <button
                       type="button"
                       className="btn btn-xs btn-success"
-                      onClick={() => {
-                        void handleTaskStatusChange(currentCommentTask, 'done').catch((err) => {
+                      disabled={Boolean(commentTaskPendingStatus)}
+                      onClick={async () => {
+                        setCommentTaskPendingStatus('done');
+                        try {
+                          await handleTaskStatusChange(currentCommentTask, 'done');
+                        } catch (err) {
                           setError(err instanceof Error ? err.message : '更新任务状态失败');
-                        });
+                        } finally {
+                          setCommentTaskPendingStatus(null);
+                        }
                       }}
                     >
-                      标记完成
+                      {commentTaskPendingStatus === 'done' && <span className="loading loading-spinner loading-xs"></span>}
+                      {commentTaskPendingStatus === 'done' ? '同步中...' : '标记完成'}
                     </button>
                   )}
                   {currentCommentTask.status !== 'invalid' && (
                     <button
                       type="button"
                       className="btn btn-xs btn-error"
-                      onClick={() => {
-                        void handleTaskStatusChange(currentCommentTask, 'invalid').catch((err) => {
+                      disabled={Boolean(commentTaskPendingStatus)}
+                      onClick={async () => {
+                        setCommentTaskPendingStatus('invalid');
+                        try {
+                          await handleTaskStatusChange(currentCommentTask, 'invalid');
+                        } catch (err) {
                           setError(err instanceof Error ? err.message : '更新任务状态失败');
-                        });
+                        } finally {
+                          setCommentTaskPendingStatus(null);
+                        }
                       }}
                     >
-                      标记无效
+                      {commentTaskPendingStatus === 'invalid' && <span className="loading loading-spinner loading-xs"></span>}
+                      {commentTaskPendingStatus === 'invalid' ? '同步中...' : '标记无效'}
                     </button>
                   )}
                 </div>
@@ -908,7 +997,7 @@ function App() {
                     type="button"
                     className="btn btn-xs btn-ghost"
                     onClick={() => {
-                      handleCommentTaskSelection(activeProjectTasks[currentCommentTaskIndex - 1] ?? null);
+                      handleCommentTaskSelection(pendingCommentTasks[currentCommentTaskIndex - 1] ?? null);
                     }}
                     disabled={currentCommentTaskIndex <= 0}
                   >
@@ -927,9 +1016,9 @@ function App() {
                     type="button"
                     className="btn btn-xs btn-ghost"
                     onClick={() => {
-                      handleCommentTaskSelection(activeProjectTasks[currentCommentTaskIndex + 1] ?? null);
+                      handleCommentTaskSelection(pendingCommentTasks[currentCommentTaskIndex + 1] ?? null);
                     }}
-                    disabled={currentCommentTaskIndex < 0 || currentCommentTaskIndex >= activeProjectTasks.length - 1}
+                    disabled={currentCommentTaskIndex < 0 || currentCommentTaskIndex >= pendingCommentTasks.length - 1}
                   >
                     →
                   </button>
