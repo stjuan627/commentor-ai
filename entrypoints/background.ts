@@ -95,21 +95,26 @@ const CDP_TEXTFIELD_ROLES = new Set([
   // Lowercase variants from some CDP versions
   'textfield', 'searchbox', 'textbox', 'combobox', 'spinbutton',
 ]);
+const MAIN_FRAME_ID = 0;
 
 export default defineBackground(() => {
   console.log('Commentor.ai background service started', { id: browser.runtime.id });
 
   // 检查内容脚本是否已注入，若未注入则主动注入
-  async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
+  async function ensureContentScriptInjected(tabId: number, frameId?: number): Promise<boolean> {
     try {
-      await browser.tabs.sendMessage(tabId, { action: 'ping' });
+      if (frameId == null) {
+        await browser.tabs.sendMessage(tabId, { action: 'ping' });
+      } else {
+        await _browser.tabs.sendMessage(tabId, { action: 'ping' }, { frameId });
+      }
       return true;
     } catch {
       // 内容脚本未加载，尝试通过 scripting API 主动注入
       console.log('Content script not loaded, injecting via scripting API...');
       try {
         await _browser.scripting.executeScript({
-          target: { tabId, allFrames: true },
+          target: frameId == null ? { tabId, allFrames: true } : { tabId, frameIds: [frameId] },
           files: ['content-scripts/content.js'],
         });
         return true;
@@ -199,13 +204,13 @@ export default defineBackground(() => {
       (async () => {
         try {
           const tabId = await getCurrentTabId();
-          const isInjected = await ensureContentScriptInjected(tabId);
+          const isInjected = await ensureContentScriptInjected(tabId, MAIN_FRAME_ID);
           if (!isInjected) {
             sendResponse({ success: false, error: 'Failed to inject content script' });
             return;
           }
 
-          const response = await browser.tabs.sendMessage(tabId, { action: 'getPageLanguage' });
+          const response = await _browser.tabs.sendMessage(tabId, { action: 'getPageLanguage' }, { frameId: MAIN_FRAME_ID });
           sendResponse(response);
         } catch (error: unknown) {
           console.error('Error getting page language:', error);
@@ -219,13 +224,13 @@ export default defineBackground(() => {
       (async () => {
         try {
           const tabId = await getCurrentTabId();
-          const isInjected = await ensureContentScriptInjected(tabId);
+          const isInjected = await ensureContentScriptInjected(tabId, MAIN_FRAME_ID);
           if (!isInjected) {
             sendResponse({ success: false, error: 'Failed to inject content script' });
             return;
           }
 
-          const response = await browser.tabs.sendMessage(tabId, { action: 'extractContent' });
+          const response = await _browser.tabs.sendMessage(tabId, { action: 'extractContent' }, { frameId: MAIN_FRAME_ID });
           sendResponse(response);
         } catch (error: unknown) {
           console.error('Error getting page content:', error);
